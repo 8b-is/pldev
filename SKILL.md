@@ -67,6 +67,8 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 - `pldev fleet health` — parallel reachability (offline + ssh BatchMode probe).
 - `pldev fleet ssh <node>` — interactive shell.
 - `pldev fleet run <selector> -- <cmd>` — parallel fan-out exec; selector = `all` / `@<role>` / `<name>`. **Gated:** `--dry-run` previews, confirm unless `--yes`, ssh key-auth only. Offline nodes skipped.
+- `pldev fleet sync-signers` — push the PUBLIC `allowed_signers` trust anchor (the provenance signers) to every reachable node's `~/.config/pldev/allowed_signers` + local, so all nodes verify the same identities. **Private keys never sync** (signing stays on origin). Gated (`--dry-run`/`--yes`). Run this after adding a signer to `internal/verify/allowed_signers`.
+- `pldev fleet ssh-config` — generate `~/.ssh/config` Host aliases (nickname + tailnet name → HostName/User) in a managed block (backs up first), so `ssh Katedralis` / `ssh Herald` work. `--dry-run` prints the block.
 
 `pldev fed status` — read-only swarm view: fetches the NATS bus monitoring endpoint (`:8222` `/varz`+`/connz`) on the `role="bus"` node (the Herald; override with `[federation] monitor_url`), and renders server health + connected clients mapped to fleet nicknames. Populates once ruflo-federation connects agents.
 

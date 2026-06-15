@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/peterlodri-sec/pldev/internal/report"
@@ -23,6 +24,23 @@ var allowedSigners []byte
 
 // namespace scopes signatures to pldev (ssh-keygen -Y -n).
 const namespace = "pldev"
+
+// DefaultAnchorPath is the runtime trust-anchor override (synced across the
+// fleet by `pldev fleet sync-signers`).
+func DefaultAnchorPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "pldev", "allowed_signers")
+}
+
+// AnchorBytes returns the effective allowed_signers: the runtime file if it
+// exists and is non-empty, else the embedded default. This is what every node
+// verifies against, so syncing the file syncs the trust.
+func AnchorBytes() []byte {
+	if b, err := os.ReadFile(DefaultAnchorPath()); err == nil && len(bytes.TrimSpace(b)) > 0 {
+		return b
+	}
+	return allowedSigners
+}
 
 // Indirection points for tests.
 var (
@@ -44,7 +62,7 @@ func writeTempAnchor() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := f.Write(allowedSigners); err != nil {
+	if _, err := f.Write(AnchorBytes()); err != nil {
 		f.Close()
 		os.Remove(f.Name())
 		return "", err

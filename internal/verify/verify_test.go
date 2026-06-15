@@ -111,3 +111,19 @@ func TestEmbeddedAnchorPresent(t *testing.T) {
 		t.Error("allowed_signers trust anchor must be embedded")
 	}
 }
+
+func TestAnchorRuntimeOverlay(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// no runtime file → embedded default
+	if string(AnchorBytes()) != string(allowedSigners) {
+		t.Error("absent runtime file should yield the embedded anchor")
+	}
+	// runtime file present → it overrides
+	p := DefaultAnchorPath()
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte("custom@x ssh-ed25519 AAAAruntime\n"), 0o644)
+	if !strings.Contains(string(AnchorBytes()), "custom@x") {
+		t.Error("runtime allowed_signers should override the embedded default")
+	}
+}
