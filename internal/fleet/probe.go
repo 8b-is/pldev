@@ -106,7 +106,12 @@ func ProbeUsers(ctx context.Context, rep *report.Reporter, nodes []Node, candida
 			if r.User == "" && r.HW.Serial == "" {
 				continue
 			}
-			cache[r.Node.Name] = NodeCache{SSHUser: r.User, HW: r.HW}
+			existing := cache[r.Node.Name]
+			hw := r.HW
+			if hw.Serial == "" && hw.CPU == "" {
+				hw = existing.HW // gather failed; keep prior hardware data
+			}
+			cache[r.Node.Name] = NodeCache{SSHUser: r.User, HW: hw}
 		}
 		if err := cache.Save(cachePath); err != nil {
 			rep.Fail("probe-cache", "save", err)
