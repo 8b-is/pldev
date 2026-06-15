@@ -91,7 +91,7 @@ func TestRender(t *testing.T) {
 			t.Errorf("render missing %q: %q", want, out)
 		}
 	}
-	if !strings.Contains(out, "offline") {
+	if !strings.Contains(out, "off") {
 		t.Error("offline status not rendered")
 	}
 }
@@ -172,5 +172,37 @@ func TestMergeFillsHWFromCache(t *testing.T) {
 	nodes := Merge(ts, cfg, cache)
 	if len(nodes) != 1 || nodes[0].HW.CPU != "Apple M3 Max" || nodes[0].HW.Cores != 16 {
 		t.Fatalf("Merge did not fill HW from cache: %+v", nodes)
+	}
+}
+
+func TestRenderWideHardware(t *testing.T) {
+	nodes := []Node{
+		{Name: "dev-main", Nickname: "Forgemaster", OS: "macOS", Online: true, Role: "command",
+			Caps: []string{"control"}, HW: HWInfo{CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}},
+		{Name: "lodris-macbook-pro", Nickname: "Squire", OS: "macOS", Online: true,
+			HW: HWInfo{CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}, Dup: true, DupOf: "Forgemaster"},
+		{Name: "blank", Nickname: "Blank", Online: false},
+	}
+	out := Render(nodes)
+	if !strings.Contains(out, "NICK") || !strings.Contains(out, "CPU") || !strings.Contains(out, "ARCH") {
+		t.Fatalf("missing header columns:\n%s", out)
+	}
+	if !strings.Contains(out, "M3 Max") || !strings.Contains(out, "64G") {
+		t.Fatalf("missing hw values:\n%s", out)
+	}
+	if !strings.Contains(out, "⚠dup") {
+		t.Fatalf("dup marker absent:\n%s", out)
+	}
+	if strings.Contains(out, "0G") {
+		t.Fatalf("zero mem must render '-', not 0G:\n%s", out)
+	}
+}
+
+func TestTrunc(t *testing.T) {
+	if got := trunc("lodris-macbook-pro", 12); got != "lodris-mac.." {
+		t.Fatalf("trunc=%q", got)
+	}
+	if got := trunc("short", 12); got != "short" {
+		t.Fatalf("trunc must leave short strings: %q", got)
 	}
 }

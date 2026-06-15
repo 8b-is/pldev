@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -106,22 +107,54 @@ func Select(nodes []Node, selector string) []Node {
 	}
 }
 
-// Render returns the fleet as an aligned ASCII table (data → stdout). The
-// nickname is the primary identity; HOST carries the tailnet name for ssh.
+// trunc shortens s to n runes, ending with ".." when cut.
+func trunc(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	if n <= 2 {
+		return s[:n]
+	}
+	return s[:n-2] + ".."
+}
+
+func dash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// Render returns the fleet as an aligned wide ASCII table (data → stdout):
+// nickname, tailnet host, role, on/off, cpu, cores, mem, arch, caps, ⚠dup.
 func Render(nodes []Node) string {
+	const f = "%-12s %-14s %-8s %-3s %-14s %-3s %-5s %-6s %s\n"
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-18s %-22s %-10s %-7s %-8s %s\n", "NICK", "HOST", "ROLE", "OS", "STATUS", "CAPS")
+	fmt.Fprintf(&b, f, "NICK", "HOST", "ROLE", "ST", "CPU", "CR", "MEM", "ARCH", "CAPS")
 	for _, n := range nodes {
-		status := "online"
+		st := "on"
 		if !n.Online {
-			status = "offline"
+			st = "off"
 		}
-		role := n.Role
-		if role == "" {
-			role = "-"
+		cores := "-"
+		if n.HW.Cores > 0 {
+			cores = strconv.Itoa(n.HW.Cores)
 		}
-		fmt.Fprintf(&b, "%-18s %-22s %-10s %-7s %-8s %s\n",
-			n.Label(), n.Name, role, n.OS, status, strings.Join(n.Caps, ","))
+		mem := "-"
+		if n.HW.MemGB > 0 {
+			mem = strconv.Itoa(n.HW.MemGB) + "G"
+		}
+		caps := strings.Join(n.Caps, ",")
+		if n.Dup {
+			if caps == "" {
+				caps = "⚠dup"
+			} else {
+				caps += " ⚠dup"
+			}
+		}
+		fmt.Fprintf(&b, f,
+			trunc(n.Label(), 12), trunc(n.Name, 14), dash(n.Role), st,
+			trunc(shortCPU(n.HW.CPU), 14), cores, mem, dash(n.HW.Arch), caps)
 	}
 	return b.String()
 }
