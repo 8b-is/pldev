@@ -110,20 +110,19 @@ func FSEventsSeverity(rss uint64) Severity {
 // Collect runs every probe with per-call timeout, recording failures in Unavailable.
 func Collect(ctx context.Context, c Collector, nmRoots []string) MemReport {
 	r := MemReport{}
-	step := func(name string, fn func() error) {
+	step := func(name string, fn func(cctx context.Context) error) {
 		cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
-		_ = cctx
-		if err := fn(); err != nil {
+		if err := fn(cctx); err != nil {
 			r.Unavailable = append(r.Unavailable, name)
 		}
 	}
-	step("mem", func() (err error) { r.Mem, err = c.Mem(ctx); return })
-	step("swap", func() (err error) { r.Swap, err = c.Swap(ctx); return })
-	step("procs", func() (err error) { r.TopProcs, err = c.TopProcs(ctx, 10); return })
-	step("fsevents", func() (err error) { r.FSEvents, err = c.FSEvents(ctx); return })
-	step("node_modules", func() (err error) { r.NodeModules, err = c.NodeModules(ctx, nmRoots); return })
-	step("zombies", func() (err error) { r.Zombies, err = c.Zombies(ctx); return })
-	step("uptime", func() (err error) { r.Uptime, err = c.Uptime(ctx); return })
+	step("mem", func(cctx context.Context) (err error) { r.Mem, err = c.Mem(cctx); return })
+	step("swap", func(cctx context.Context) (err error) { r.Swap, err = c.Swap(cctx); return })
+	step("procs", func(cctx context.Context) (err error) { r.TopProcs, err = c.TopProcs(cctx, 10); return })
+	step("fsevents", func(cctx context.Context) (err error) { r.FSEvents, err = c.FSEvents(cctx); return })
+	step("node_modules", func(cctx context.Context) (err error) { r.NodeModules, err = c.NodeModules(cctx, nmRoots); return })
+	step("zombies", func(cctx context.Context) (err error) { r.Zombies, err = c.Zombies(cctx); return })
+	step("uptime", func(cctx context.Context) (err error) { r.Uptime, err = c.Uptime(cctx); return })
 	return r
 }
