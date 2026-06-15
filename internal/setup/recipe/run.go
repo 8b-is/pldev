@@ -39,6 +39,14 @@ func Run(ctx context.Context, r Recipe, opts Options) error {
 	for _, step := range r.Steps {
 		action, target := step.Label()
 
+		// In dry-run, a non-mutating step (Verify) can't be meaningfully probed:
+		// it checks state that only exists after the mutating steps applied.
+		// Preview it as dry rather than running its probe against a stale world.
+		if opts.DryRun && !step.Mutating() {
+			rep.Do(action, target)
+			continue
+		}
+
 		st, err := step.Check(c)
 		if err != nil {
 			failed++

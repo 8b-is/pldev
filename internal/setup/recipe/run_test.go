@@ -132,6 +132,21 @@ func TestCheckErrorIsFailure(t *testing.T) {
 	}
 }
 
+func TestDryRunSkipsNonMutatingProbe(t *testing.T) {
+	// A verify-like step whose probe would error must NOT fail a dry run —
+	// there is nothing applied to verify yet.
+	out, err := runWith(t, []Step{
+		fakeStep{action: "verify", target: "t", status: StatusPending,
+			checkErr: errors.New("not applied yet"), mutating: false},
+	}, Options{DryRun: true})
+	if err != nil {
+		t.Errorf("dry-run must not fail on a non-mutating probe: %v", err)
+	}
+	if !strings.Contains(out, "status=dry") || strings.Contains(out, "status=fail") {
+		t.Errorf("expected dry preview, no fail: %q", out)
+	}
+}
+
 func TestNonMutatingNeedsNoConfirm(t *testing.T) {
 	old := confirm
 	defer func() { confirm = old }()

@@ -13,6 +13,7 @@ import (
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
 	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/setup"
+	"github.com/peterlodri-sec/pldev/internal/setup/recipe"
 	"github.com/peterlodri-sec/pldev/internal/sysinfo"
 	"github.com/peterlodri-sec/pldev/internal/tui"
 )
@@ -64,7 +65,22 @@ func main() {
 		runPS(ctx)
 		return
 	}
-	// direct subcommand: pldev setup
+	// direct subcommand: pldev setup <recipe> (composite flows like ruflo)
+	if len(positional) >= 2 && positional[0] == "setup" {
+		if r, ok := recipe.Named(positional[1]); ok {
+			err := recipe.Run(ctx, r, recipe.Options{
+				DryRun: setupDryRun,
+				Yes:    opts.YesSafe,
+				Rep:    rep.Sub("setup"),
+			})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+	// direct subcommand: pldev setup (package install)
 	if len(positional) >= 1 && positional[0] == "setup" {
 		toks := strings.Join(positional[1:], "+")
 		err := setup.Run(ctx, setup.Options{

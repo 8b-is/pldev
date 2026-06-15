@@ -158,9 +158,10 @@ func (s RunCmd) Apply(c Context) error {
 
 type RegisterMCP struct {
 	MCPName   string
-	Transport string // "" or "stdio" => stdio; "http"/"sse" => --transport
-	Target    string // stdio: the command (+args); http/sse: the URL
-	Scope     string // e.g. "user" (global) or "project"
+	Transport string   // "" or "stdio" => stdio; "http"/"sse" => --transport
+	Target    string   // stdio: the command (+args); http/sse: the URL
+	Scope     string   // e.g. "user" (global) or "project"
+	Env       []string // optional "KEY=VALUE" pairs passed as `-e KEY=VALUE`
 }
 
 func (s RegisterMCP) Label() (string, string) { return "register-mcp", s.MCPName }
@@ -183,11 +184,19 @@ func (s RegisterMCP) addArgs() []string {
 	if scope == "" {
 		scope = "user"
 	}
+	args := []string{"mcp", "add"}
+	if s.Transport == "http" || s.Transport == "sse" {
+		args = append(args, "--transport", s.Transport)
+	}
+	args = append(args, s.MCPName, "-s", scope)
+	for _, e := range s.Env {
+		args = append(args, "-e", e)
+	}
 	switch s.Transport {
 	case "http", "sse":
-		return []string{"mcp", "add", "--transport", s.Transport, s.MCPName, "-s", scope, s.Target}
+		return append(args, s.Target)
 	default: // stdio
-		return append([]string{"mcp", "add", s.MCPName, "-s", scope, "--"}, strings.Fields(s.Target)...)
+		return append(append(args, "--"), strings.Fields(s.Target)...)
 	}
 }
 
