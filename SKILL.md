@@ -68,7 +68,9 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 - `pldev fleet ssh <node>` — interactive shell.
 - `pldev fleet run <selector> -- <cmd>` — parallel fan-out exec; selector = `all` / `@<role>` / `<name>`. **Gated:** `--dry-run` previews, confirm unless `--yes`, ssh key-auth only. Offline nodes skipped.
 
-`pldev fed status` — read-only swarm view: fetches the NATS bus monitoring endpoint (`:8222` `/varz`+`/connz`) on the `role="bus"` node (the Herald; override with `[federation] monitor_url`), and renders server health + connected clients mapped to fleet nicknames. Populates once ruflo-federation connects agents. ruflo-federation *enablement* + ruvllm→Ollama routing (keyed on `caps`) layer on top — separate specs.
+`pldev fed status` — read-only swarm view: fetches the NATS bus monitoring endpoint (`:8222` `/varz`+`/connz`) on the `role="bus"` node (the Herald; override with `[federation] monitor_url`), and renders server health + connected clients mapped to fleet nicknames. Populates once ruflo-federation connects agents.
+
+`pldev fed validate <file>` — the agent-protocol boundary check: runs a vaked `agent_msg` through `vakedc` (valid → ok; malformed → rejected, never crosses to the swarm). Needs `vakedc` + the `agent_msg` schema in vaked-base. Live `fed watch`/`pub` over NATS deferred until agents emit traffic. ruflo-federation *enablement* + ruvllm→Ollama routing layer on top — separate specs.
 
 ## Provenance
 
