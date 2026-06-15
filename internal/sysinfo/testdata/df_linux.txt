@@ -1,0 +1,8 @@
+Filesystem     1K-blocks     Used Available Use% Mounted on
+udev             8123456        0   8123456   0% /dev
+tmpfs            1638400     1720   1636680   1% /run
+/dev/nvme0n1p2 491252320 98765432 367654321  22% /
+tmpfs            8192000        0   8192000   0% /dev/shm
+/dev/nvme0n1p1    523248     6132    517116   2% /boot/efi
+/dev/sdb1      976761560 12345678 914579882   2% /mnt/data
+overlay        491252320 98765432 367654321  22% /var/lib/docker/overlay2/abc/merged
