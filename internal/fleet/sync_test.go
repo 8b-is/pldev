@@ -12,7 +12,7 @@ import (
 )
 
 func TestGenSSHConfig(t *testing.T) {
-	out := GenSSHConfig(Merge(tsNodes(), cfg()))
+	out := GenSSHConfig(Merge(tsNodes(), cfg(), nil))
 	for _, want := range []string{sshMarkBegin, sshMarkEnd, "Host Katedralis dev-cx53", "HostName 100.0.0.1", "User dev"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ssh-config missing %q:\n%s", want, out)
@@ -28,7 +28,7 @@ func TestWriteSSHConfigIdempotentRegion(t *testing.T) {
 	p := filepath.Join(dir, "config")
 	os.WriteFile(p, []byte("Host existing\n    HostName 1.2.3.4\n"), 0o600)
 
-	block := GenSSHConfig(Merge(tsNodes(), cfg()))
+	block := GenSSHConfig(Merge(tsNodes(), cfg(), nil))
 	if err := WriteSSHConfig(p, block); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestWriteSSHConfigIdempotentRegion(t *testing.T) {
 func TestSyncSignersDryRun(t *testing.T) {
 	var buf bytes.Buffer
 	rep := report.New(&buf, "fleet")
-	nodes := Merge(tsNodes(), cfg()) // dev-cx53 online, rpi offline
+	nodes := Merge(tsNodes(), cfg(), nil) // dev-cx53 online, rpi offline
 	err := SyncSigners(context.Background(), rep, nodes, []byte("anchor"), filepath.Join(t.TempDir(), "as"), true, false)
 	if err != nil {
 		t.Fatalf("dry-run err: %v", err)
@@ -72,7 +72,7 @@ func TestSyncSignersDryRun(t *testing.T) {
 }
 
 func TestReachableSkipsOfflineAndNoUser(t *testing.T) {
-	r := reachable(Merge(tsNodes(), cfg()))
+	r := reachable(Merge(tsNodes(), cfg(), nil))
 	for _, n := range r {
 		if !n.Online || n.IP == "" || n.SSHUser == "" {
 			t.Errorf("reachable returned a bad node: %+v", n)

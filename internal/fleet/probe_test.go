@@ -2,7 +2,12 @@ package fleet
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"path/filepath"
 	"testing"
+
+	"github.com/peterlodri-sec/pldev/internal/report"
 )
 
 func stubTry(t *testing.T, ok func(user, ip string) bool) {
@@ -46,5 +51,67 @@ func TestProbeNodeNoDuplicateTries(t *testing.T) {
 	probeNode(context.Background(), Node{IP: "100.0.0.1", SSHUser: "root"}, []string{"root", "root", "dev"})
 	if n != 2 { // root, dev — not root three times
 		t.Errorf("expected 2 distinct tries, got %d", n)
+	}
+}
+
+// TestProbeUsersPreservesHWOnGatherFailure verifies Fix 1: when ssh auth
+// succeeds but gatherHW returns an error, previously-cached hardware data is
+// preserved rather than overwritten with a zero struct.
+func TestProbeUsersPreservesHWOnGatherFailure(t *testing.T) {
+	origTry, origGather := trySSHUser, gatherHW
+	defer func() { trySSHUser, gatherHW = origTry, origGather }()
+
+	// SSH auth succeeds, but HW gather fails this run.
+	trySSHUser = func(_ context.Context, user, _ string) bool { return user == "root" }
+	gatherHW = func(_ context.Context, _, _ string) (HWInfo, error) {
+		return HWInfo{}, fmt.Errorf("gather failed")
+	}
+
+	path := filepath.Join(t.TempDir(), "cache.json")
+
+	// Pre-populate cache with good hardware data for the node.
+	priorHW := HWInfo{Serial: "PRIOR123", CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}
+	prior := FleetCache{"n1": {SSHUser: "root", HW: priorHW}}
+	if err := prior.Save(path); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := report.New(io.Discard, "fleet")
+	nodes := []Node{{Name: "n1", IP: "100.0.0.1", Online: true}}
+	ProbeUsers(context.Background(), rep, nodes, nil, path)
+
+	cache, err := LoadCache(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cache["n1"]
+	if got.HW.Serial != priorHW.Serial {
+		t.Errorf("prior HW.Serial overwritten: want %q, got %q", priorHW.Serial, got.HW.Serial)
+	}
+	if got.HW.CPU != priorHW.CPU {
+		t.Errorf("prior HW.CPU overwritten: want %q, got %q", priorHW.CPU, got.HW.CPU)
+	}
+}
+
+func TestProbeUsersWritesCache(t *testing.T) {
+	origTry, origGather := trySSHUser, gatherHW
+	defer func() { trySSHUser, gatherHW = origTry, origGather }()
+	trySSHUser = func(ctx context.Context, user, ip string) bool { return user == "root" }
+	gatherHW = func(ctx context.Context, user, ip string) (HWInfo, error) {
+		return HWInfo{Serial: "S1", CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}, nil
+	}
+
+	path := filepath.Join(t.TempDir(), "cache.json")
+	rep := report.New(io.Discard, "fleet")
+	nodes := []Node{{Name: "n1", IP: "100.0.0.1", Online: true}}
+	ProbeUsers(context.Background(), rep, nodes, nil, path)
+
+	cache, err := LoadCache(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cache["n1"]
+	if got.SSHUser != "root" || got.HW.Serial != "S1" || got.HW.Cores != 16 {
+		t.Fatalf("cache not written correctly: %+v", got)
 	}
 }

@@ -28,7 +28,7 @@ func cfg() FleetConfig {
 }
 
 func TestMergeAnnotatesExcludesAndUsers(t *testing.T) {
-	nodes := Merge(tsNodes(), cfg())
+	nodes := Merge(tsNodes(), cfg(), nil)
 	if len(nodes) != 2 {
 		t.Fatalf("excluded node should be dropped; got %d", len(nodes))
 	}
@@ -53,7 +53,7 @@ func TestMergeAnnotatesExcludesAndUsers(t *testing.T) {
 }
 
 func TestSelect(t *testing.T) {
-	nodes := Merge(tsNodes(), cfg())
+	nodes := Merge(tsNodes(), cfg(), nil)
 	if len(Select(nodes, "all")) != 2 {
 		t.Error("all")
 	}
@@ -73,7 +73,7 @@ func TestSelect(t *testing.T) {
 }
 
 func TestLabelFallsBackToName(t *testing.T) {
-	nodes := Merge(tsNodes(), cfg())
+	nodes := Merge(tsNodes(), cfg(), nil)
 	for _, n := range nodes {
 		if n.Name == "dev-cx53" && n.Label() != "Katedralis" {
 			t.Errorf("nickname should be the label, got %q", n.Label())
@@ -85,13 +85,13 @@ func TestLabelFallsBackToName(t *testing.T) {
 }
 
 func TestRender(t *testing.T) {
-	out := Render(Merge(tsNodes(), cfg()))
+	out := Render(Merge(tsNodes(), cfg(), nil), false)
 	for _, want := range []string{"NICK", "HOST", "Katedralis", "dev-cx53"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("render missing %q: %q", want, out)
 		}
 	}
-	if !strings.Contains(out, "offline") {
+	if !strings.Contains(out, "off") {
 		t.Error("offline status not rendered")
 	}
 }
@@ -117,7 +117,7 @@ func TestClassifyHealthStates(t *testing.T) {
 func TestRunDryRunNoExec(t *testing.T) {
 	var buf strings.Builder
 	rep := report.New(&buf, "fleet")
-	nodes := Merge(tsNodes(), cfg())
+	nodes := Merge(tsNodes(), cfg(), nil)
 	// dry-run must not touch ssh; returns nil regardless of reachability
 	if err := Run(context.Background(), rep, nodes, []string{"uname", "-a"}, true, false); err != nil {
 		t.Fatalf("dry-run err: %v", err)
@@ -134,10 +134,79 @@ func TestRunConfirmDeclineNoExec(t *testing.T) {
 	var buf strings.Builder
 	rep := report.New(&buf, "fleet")
 	// declined → returns nil before any ssh
-	if err := Run(context.Background(), rep, Merge(tsNodes(), cfg()), []string{"echo"}, false, false); err != nil {
+	if err := Run(context.Background(), rep, Merge(tsNodes(), cfg(), nil), []string{"echo"}, false, false); err != nil {
 		t.Fatalf("declined run err: %v", err)
 	}
 	if !strings.Contains(buf.String(), "aborted") {
 		t.Errorf("expected aborted: %q", buf.String())
+	}
+}
+
+func TestDetectDups(t *testing.T) {
+	nodes := []Node{
+		{Name: "dev-main", Nickname: "Forgemaster", HW: HWInfo{Serial: "RJ6W"}},
+		{Name: "lodris-macbook-pro", Nickname: "Squire", HW: HWInfo{Serial: "RJ6W"}},
+		{Name: "crabcc", Nickname: "Warforge", HW: HWInfo{Serial: "XEON1"}},
+		{Name: "no-probe", Nickname: "Ghost", HW: HWInfo{Serial: ""}},
+		{Name: "no-probe-2", Nickname: "Ghost2", HW: HWInfo{Serial: ""}},
+	}
+	detectDups(nodes)
+	if nodes[0].Dup {
+		t.Error("first node with a serial must not be marked dup")
+	}
+	if !nodes[1].Dup || nodes[1].DupOf != "Forgemaster" {
+		t.Errorf("Squire should be dup of Forgemaster, got Dup=%v DupOf=%q", nodes[1].Dup, nodes[1].DupOf)
+	}
+	if nodes[2].Dup {
+		t.Error("unique serial must not be dup")
+	}
+	if nodes[3].Dup || nodes[4].Dup {
+		t.Error("empty serials must never match each other")
+	}
+}
+
+func TestMergeFillsHWFromCache(t *testing.T) {
+	ts := []TSNode{{Name: "dev-main", IP: "100.0.0.1", Online: true}}
+	cfg := FleetConfig{Node: map[string]NodeConfig{"dev-main": {Nickname: "Forgemaster"}}}
+	cache := FleetCache{"dev-main": {HW: HWInfo{Serial: "RJ6W", CPU: "Apple M3 Max", Cores: 16}}}
+	nodes := Merge(ts, cfg, cache)
+	if len(nodes) != 1 || nodes[0].HW.CPU != "Apple M3 Max" || nodes[0].HW.Cores != 16 {
+		t.Fatalf("Merge did not fill HW from cache: %+v", nodes)
+	}
+}
+
+func TestRenderWideHardware(t *testing.T) {
+	nodes := []Node{
+		{Name: "dev-main", Nickname: "Forgemaster", OS: "macOS", Online: true, Role: "command",
+			Caps: []string{"control"}, HW: HWInfo{CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}},
+		{Name: "lodris-macbook-pro", Nickname: "Squire", OS: "macOS", Online: true,
+			HW: HWInfo{CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}, Dup: true, DupOf: "Forgemaster"},
+		{Name: "blank", Nickname: "Blank", Online: false},
+	}
+	out := Render(nodes, false)
+	if !strings.Contains(out, "NICK") || !strings.Contains(out, "CPU") || !strings.Contains(out, "ARCH") {
+		t.Fatalf("missing header columns:\n%s", out)
+	}
+	if !strings.Contains(out, "M3 Max") || !strings.Contains(out, "64G") {
+		t.Fatalf("missing hw values:\n%s", out)
+	}
+	if !strings.Contains(out, "⚠dup") {
+		t.Fatalf("dup marker absent:\n%s", out)
+	}
+	full := Render(nodes, true)
+	if !strings.Contains(full, "CAPS") || !strings.Contains(full, "control") {
+		t.Fatalf("full mode must show CAPS:\n%s", full)
+	}
+	if strings.Contains(out, "control") {
+		t.Fatalf("default (non-full) must NOT show caps:\n%s", out)
+	}
+}
+
+func TestTrunc(t *testing.T) {
+	if got := trunc("lodris-macbook-pro", 12); got != "lodris-mac.." {
+		t.Fatalf("trunc=%q", got)
+	}
+	if got := trunc("short", 12); got != "short" {
+		t.Fatalf("trunc must leave short strings: %q", got)
 	}
 }

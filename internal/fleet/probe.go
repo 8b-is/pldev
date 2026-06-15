@@ -21,10 +21,11 @@ var trySSHUser = func(ctx context.Context, user, ip string) bool {
 	return err == nil
 }
 
-// ProbeResult is the discovered ssh user for a node ("" = none of the candidates worked).
+// ProbeResult is the discovered ssh user + hardware for a node ("" user = none worked).
 type ProbeResult struct {
 	Node Node
 	User string
+	HW   HWInfo
 }
 
 // probeNode returns the first candidate ssh user that authenticates. The node's
@@ -50,7 +51,7 @@ func probeNode(ctx context.Context, n Node, candidates []string) string {
 // ProbeUsers probes the given nodes (online + with an IP) in parallel, prints a
 // report + a fleet.toml snippet for the matches, and returns the results.
 // Read-only (ssh true probes); it does not write config.
-func ProbeUsers(ctx context.Context, rep *report.Reporter, nodes []Node, candidates []string) []ProbeResult {
+func ProbeUsers(ctx context.Context, rep *report.Reporter, nodes []Node, candidates []string, cachePath string) []ProbeResult {
 	if len(candidates) == 0 {
 		candidates = DefaultUserCandidates
 	}
@@ -71,7 +72,15 @@ func ProbeUsers(ctx context.Context, rep *report.Reporter, nodes []Node, candida
 			defer wg.Done()
 			defer func() { <-sem }()
 			user := probeNode(ctx, n, candidates)
-			results[i] = ProbeResult{Node: n, User: user}
+			var hw HWInfo
+			if user != "" {
+				if h, err := gatherHW(ctx, user, n.IP); err == nil {
+					hw = h
+				} else {
+					rep.Fail("probe-hw", n.Label(), err)
+				}
+			}
+			results[i] = ProbeResult{Node: n, User: user, HW: hw}
 			if user == "" {
 				rep.Fail("probe-user", n.Label(), fmt.Errorf("no candidate ssh user worked"))
 			} else {
@@ -90,6 +99,25 @@ func ProbeUsers(ctx context.Context, rep *report.Reporter, nodes []Node, candida
 		}
 		found++
 		fmt.Printf("[node.%s]\nssh_user = %q\n", r.Node.Name, r.User)
+	}
+	if cachePath != "" {
+		cache, _ := LoadCache(cachePath)
+		for _, r := range results {
+			if r.User == "" && r.HW.Serial == "" {
+				continue
+			}
+			existing := cache[r.Node.Name]
+			hw := r.HW
+			if hw.Serial == "" && hw.CPU == "" {
+				hw = existing.HW // gather failed; keep prior hardware data
+			}
+			cache[r.Node.Name] = NodeCache{SSHUser: r.User, HW: hw}
+		}
+		if err := cache.Save(cachePath); err != nil {
+			rep.Fail("probe-cache", "save", err)
+		} else {
+			rep.OK("probe-cache", cachePath)
+		}
 	}
 	rep.Info("fleet-probe-user", report.KV{K: "found", V: strconv.Itoa(found)}, report.KV{K: "nodes", V: strconv.Itoa(len(targets))})
 	return results
