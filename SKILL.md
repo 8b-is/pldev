@@ -64,7 +64,7 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 `pldev fleet` is a tailscale-discovered, config-annotated node registry. `~/.config/pldev/fleet.toml` annotates each node by short name: `[node.<name>]` with `nickname`, `role`, `caps`, `ssh_user`, `exclude` (+ a top-level `default_ssh_user`). Set real `ssh_user`s there or `health`/`ssh`/`run` can't reach nodes. A `nickname` becomes the node's primary display identity (lore name) and is selectable (case-insensitive) anywhere a node name is — `pldev fleet ssh Katedralis`.
 
 - `pldev fleet list` — table (node/role/os/status/caps).
-- `pldev fleet health` — parallel reachability (offline + ssh BatchMode probe).
+- `pldev fleet health` — parallel 3-tier probe → 4 states per node: **offline** (tailscale down) · **unreachable** (online but TCP :22 won't connect) · **reachable** (port open, ssh command failed — usually wrong `ssh_user`) · **ssh-ok** (fully usable). Per-state summary line.
 - `pldev fleet ssh <node>` — interactive shell.
 - `pldev fleet run <selector> -- <cmd>` — parallel fan-out exec; selector = `all` / `@<role>` / `<name>`. **Gated:** `--dry-run` previews, confirm unless `--yes`, ssh key-auth only. Offline nodes skipped.
 - `pldev fleet sync-signers` — push the PUBLIC `allowed_signers` trust anchor (the provenance signers) to every reachable node's `~/.config/pldev/allowed_signers` + local, so all nodes verify the same identities. **Private keys never sync** (signing stays on origin). Gated (`--dry-run`/`--yes`). Run this after adding a signer to `internal/verify/allowed_signers`.

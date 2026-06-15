@@ -3,9 +3,11 @@ package fleet
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/sys"
@@ -21,18 +23,58 @@ func sshBase(n Node) []string {
 	return []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=6", n.SSHUser + "@" + n.IP}
 }
 
-// Health probes every node in parallel: offline nodes are skipped, online ones
-// get an ssh reachability check. Reports one line per node + a summary.
+// Health states, from worst to best.
+const (
+	StateOffline     = "offline"     // tailscale reports the node down
+	StateUnreachable = "unreachable" // online per tailscale but TCP :22 won't connect (stale/firewalled)
+	StateReachable   = "reachable"   // ssh port open, but the ssh command failed (wrong user/key)
+	StateSSHOK       = "ssh-ok"      // ssh handshake + command succeeded — fully usable
+)
+
+// classify derives the health state from the three probes. Pure + testable.
+func classify(online, pingOK, sshOK bool) string {
+	switch {
+	case !online:
+		return StateOffline
+	case !pingOK:
+		return StateUnreachable
+	case !sshOK:
+		return StateReachable
+	default:
+		return StateSSHOK
+	}
+}
+
+// sshPort is the port probed for the reachable tier.
+const sshPort = "22"
+
+// Health probes every node in parallel through three tiers — tailscale online,
+// TCP :22 open (reachable), ssh command (ssh-ok) — and reports one line per node
+// with its state, plus a per-state summary.
 func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxParallel)
 	var mu sync.Mutex
-	var ok, down, unreach int
+	counts := map[string]int{}
+
+	emit := func(n Node, state string) {
+		mu.Lock()
+		defer mu.Unlock()
+		counts[state]++
+		kv := report.KV{K: "state", V: state}
+		switch state {
+		case StateSSHOK, StateReachable:
+			rep.OK("health", n.Label(), kv)
+		case StateOffline:
+			rep.Skip("health", n.Label(), state)
+		default: // unreachable
+			rep.Fail("health", n.Label(), fmt.Errorf("online but unreachable"), kv)
+		}
+	}
 
 	for _, n := range nodes {
 		if !n.Online {
-			rep.Skip("health", n.Label(), "offline")
-			down++
+			emit(n, StateOffline)
 			continue
 		}
 		wg.Add(1)
@@ -40,23 +82,25 @@ func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
 		go func(n Node) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			_, err := sys.Run(ctx, "ssh", append(sshBase(n), "true")...)
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				rep.Fail("health", n.Label(), err)
-				unreach++
-				return
+			conn, derr := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort(n.IP, sshPort))
+			tcpOK := derr == nil
+			if conn != nil {
+				conn.Close()
 			}
-			rep.OK("health", n.Label())
-			ok++
+			sshOK := false
+			if tcpOK {
+				_, serr := sys.Run(ctx, "ssh", append(sshBase(n), "true")...)
+				sshOK = serr == nil
+			}
+			emit(n, classify(true, tcpOK, sshOK))
 		}(n)
 	}
 	wg.Wait()
 	rep.Info("fleet-health",
-		report.KV{K: "ok", V: strconv.Itoa(ok)},
-		report.KV{K: "offline", V: strconv.Itoa(down)},
-		report.KV{K: "unreachable", V: strconv.Itoa(unreach)},
+		report.KV{K: "ssh-ok", V: strconv.Itoa(counts[StateSSHOK])},
+		report.KV{K: "reachable", V: strconv.Itoa(counts[StateReachable])},
+		report.KV{K: "unreachable", V: strconv.Itoa(counts[StateUnreachable])},
+		report.KV{K: "offline", V: strconv.Itoa(counts[StateOffline])},
 	)
 }
 
