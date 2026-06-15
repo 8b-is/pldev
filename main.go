@@ -9,6 +9,7 @@ import (
 
 	"github.com/peterlodri-sec/pldev/internal/doctor/mem"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
+	"github.com/peterlodri-sec/pldev/internal/sysinfo"
 	"github.com/peterlodri-sec/pldev/internal/tui"
 )
 
@@ -36,12 +37,23 @@ func main() {
 		runMem(ctx, opts)
 		return
 	}
+	// direct subcommand: pldev ps
+	if len(positional) >= 1 && positional[0] == "ps" {
+		runPS(ctx)
+		return
+	}
 	if len(positional) == 0 {
 		rootMenu(ctx, opts)
 		return
 	}
-	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem] [--report] [--yes] [--no-color]")
+	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps] [--report] [--yes] [--no-color]")
 	os.Exit(2)
+}
+
+func runPS(ctx context.Context) {
+	info := sysinfo.Collect(ctx, sysinfo.New(), probe.New())
+	color := os.Getenv("NO_COLOR") == ""
+	fmt.Print(sysinfo.RenderPanel(info, color))
 }
 
 func runMem(ctx context.Context, opts mem.Options) {
@@ -52,14 +64,17 @@ func runMem(ctx context.Context, opts mem.Options) {
 }
 
 func rootMenu(ctx context.Context, opts mem.Options) {
-	m := tui.NewSelect("pldev", []string{"doctor mem", "Quit"})
+	m := tui.NewSelect("pldev", []string{"doctor mem", "system info (ps)", "Quit"})
 	res, err := tea.NewProgram(m).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	sm := res.(tui.SelectModel)
-	if sm.Chosen == 0 {
+	switch sm.Chosen {
+	case 0:
 		runMem(ctx, opts)
+	case 1:
+		runPS(ctx)
 	}
 }

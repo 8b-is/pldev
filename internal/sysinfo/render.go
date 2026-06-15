@@ -32,11 +32,12 @@ func RenderPanel(s SysInfo, color bool) string {
 
 	// box line with raw (uncolored) content used for width; styled parts inlined
 	line := func(content string) {
-		// pad to boxWidth based on visible length (content here is plain for width)
-		pad := boxWidth - visibleLen(content)
-		if pad < 0 {
-			pad = 0
+		vis := visibleLen(content)
+		if vis > boxWidth {
+			content = truncVisible(content, boxWidth)
+			vis = boxWidth
 		}
+		pad := boxWidth - vis
 		fmt.Fprintf(&b, "| %s%s |\n", content, strings.Repeat(" ", pad))
 	}
 
@@ -126,6 +127,38 @@ func RenderPanel(s SysInfo, color bool) string {
 }
 
 //nolint:unused
+// truncVisible cuts s to at most max visible runes, appending ".." when cut.
+// It copies ANSI escape sequences through without counting them.
+func truncVisible(s string, max int) string {
+	if max <= 2 {
+		return s
+	}
+	var out strings.Builder
+	count := 0
+	inEsc := false
+	for _, r := range s {
+		if inEsc {
+			out.WriteRune(r)
+			if r == 'm' {
+				inEsc = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			inEsc = true
+			out.WriteRune(r)
+			continue
+		}
+		if count >= max-2 {
+			out.WriteString("..")
+			break
+		}
+		out.WriteRune(r)
+		count++
+	}
+	return out.String()
+}
+
 // visibleLen returns the printable length of s, ignoring ANSI escape sequences.
 func visibleLen(s string) int {
 	n := 0
