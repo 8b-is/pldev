@@ -54,20 +54,20 @@ func TestMergeAnnotatesExcludesAndUsers(t *testing.T) {
 
 func TestSelect(t *testing.T) {
 	nodes := Merge(tsNodes(), cfg(), nil)
-	if len(Select(nodes, "all")) != 2 {
+	if len(SelectNodes(nodes, "all")) != 2 {
 		t.Error("all")
 	}
-	if r := Select(nodes, "@hetzner"); len(r) != 1 || r[0].Name != "dev-cx53" {
+	if r := SelectNodes(nodes, "@hetzner"); len(r) != 1 || r[0].Name != "dev-cx53" {
 		t.Errorf("@role: %v", r)
 	}
-	if r := Select(nodes, "rpi3b-recon"); len(r) != 1 {
+	if r := SelectNodes(nodes, "rpi3b-recon"); len(r) != 1 {
 		t.Error("by name")
 	}
 	// select by nickname (case-insensitive)
-	if r := Select(nodes, "katedralis"); len(r) != 1 || r[0].Name != "dev-cx53" {
+	if r := SelectNodes(nodes, "katedralis"); len(r) != 1 || r[0].Name != "dev-cx53" {
 		t.Errorf("by nickname: %v", r)
 	}
-	if Select(nodes, "nope") != nil {
+	if SelectNodes(nodes, "nope") != nil {
 		t.Error("unknown selector should be empty")
 	}
 }
@@ -85,7 +85,7 @@ func TestLabelFallsBackToName(t *testing.T) {
 }
 
 func TestRender(t *testing.T) {
-	out := Render(Merge(tsNodes(), cfg(), nil), false)
+	out := Render(GroupByMachine(Merge(tsNodes(), cfg(), nil)), false)
 	for _, want := range []string{"NICK", "HOST", "Katedralis", "dev-cx53"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("render missing %q: %q", want, out)
@@ -183,22 +183,64 @@ func TestRenderWideHardware(t *testing.T) {
 			HW: HWInfo{CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}, Dup: true, DupOf: "Forgemaster"},
 		{Name: "blank", Nickname: "Blank", Online: false},
 	}
-	out := Render(nodes, false)
+	out := Render(GroupByMachine(nodes), false)
 	if !strings.Contains(out, "NICK") || !strings.Contains(out, "CPU") || !strings.Contains(out, "ARCH") {
 		t.Fatalf("missing header columns:\n%s", out)
 	}
 	if !strings.Contains(out, "M3 Max") || !strings.Contains(out, "64G") {
 		t.Fatalf("missing hw values:\n%s", out)
 	}
-	if !strings.Contains(out, "⚠dup") {
-		t.Fatalf("dup marker absent:\n%s", out)
-	}
-	full := Render(nodes, true)
+	full := Render(GroupByMachine(nodes), true)
 	if !strings.Contains(full, "CAPS") || !strings.Contains(full, "control") {
 		t.Fatalf("full mode must show CAPS:\n%s", full)
 	}
 	if strings.Contains(out, "control") {
 		t.Fatalf("default (non-full) must NOT show caps:\n%s", out)
+	}
+}
+
+func TestRenderMachines(t *testing.T) {
+	nodes := []Node{
+		{Name: "dev-main", Nickname: "Forgemaster", Online: true, IP: "100.0.0.1", Role: "command",
+			Caps: []string{"control"}, HW: HWInfo{Serial: "RJ6W", CPU: "Apple M1 Pro", Cores: 8, MemGB: 16, MemFreeGB: 2, Arch: "arm64"}},
+		{Name: "lodris-macbook-pro", Nickname: "Squire", Online: false, IP: "100.0.0.9", HW: HWInfo{Serial: "RJ6W", CPU: "Apple M1 Pro"}},
+	}
+	ms := GroupByMachine(nodes)
+	out := Render(ms, false)
+	if !strings.Contains(out, "M1 Pro") || !strings.Contains(out, "16G/2G") {
+		t.Fatalf("missing canonical hw:\n%s", out)
+	}
+	if !strings.Contains(out, "+1 alias") {
+		t.Fatalf("missing alias marker:\n%s", out)
+	}
+	if strings.Contains(out, "lodris-macbook-pro") {
+		t.Fatalf("non-full leaked alias name:\n%s", out)
+	}
+	full := Render(ms, true)
+	if !strings.Contains(full, "CAPS") || !strings.Contains(full, "control") {
+		t.Fatalf("full missing caps:\n%s", full)
+	}
+	if !strings.Contains(full, "alias lodris-macbook-pro") {
+		t.Fatalf("full must list alias:\n%s", full)
+	}
+}
+
+func TestSelectMachineByAlias(t *testing.T) {
+	nodes := []Node{
+		{Name: "dev-main", Nickname: "Forgemaster", Online: true, HW: HWInfo{Serial: "RJ6W"}},
+		{Name: "lodris-macbook-pro", Nickname: "Squire", Online: false, HW: HWInfo{Serial: "RJ6W"}},
+		{Name: "warforge", Nickname: "Warforge", Online: true, Role: "hetzner", HW: HWInfo{Serial: "XEON"}},
+	}
+	ms := GroupByMachine(nodes)
+	got := Select(ms, "Squire")
+	if len(got) != 1 || got[0].Serial != "RJ6W" {
+		t.Fatalf("alias select failed: %+v", got)
+	}
+	if r := Select(ms, "@hetzner"); len(r) != 1 || r[0].Canonical().Name != "warforge" {
+		t.Fatalf("role select failed: %+v", r)
+	}
+	if a := Select(ms, "all"); len(a) != 2 {
+		t.Fatalf("all should be 2 machines, got %d", len(a))
 	}
 }
 
