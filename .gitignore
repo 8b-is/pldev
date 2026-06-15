@@ -3,3 +3,9 @@
 /dist/
 *.test
 .DS_Store
+
+# cosign — NEVER commit the private key or root keygen artifacts.
+# Only internal/verify/cosign.pub (the embedded trust anchor) is tracked.
+/cosign.key
+/cosign.pub
+/import-cosign.*
