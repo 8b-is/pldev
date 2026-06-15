@@ -62,12 +62,25 @@ func TestSyncSignersDryRun(t *testing.T) {
 	var buf bytes.Buffer
 	rep := report.New(&buf, "fleet")
 	nodes := Merge(tsNodes(), cfg(), nil) // dev-cx53 online, rpi offline
-	err := SyncSigners(context.Background(), rep, nodes, []byte("anchor"), filepath.Join(t.TempDir(), "as"), true, false)
+	err := SyncSigners(context.Background(), rep, GroupByMachine(nodes), []byte("anchor"), filepath.Join(t.TempDir(), "as"), true, false)
 	if err != nil {
 		t.Fatalf("dry-run err: %v", err)
 	}
 	if !strings.Contains(buf.String(), "status=dry") {
 		t.Errorf("dry-run should log dry: %q", buf.String())
+	}
+}
+
+func TestReachableMachines(t *testing.T) {
+	nodes := []Node{
+		{Name: "dev-main", Online: true, IP: "100.0.0.1", SSHUser: "lodripeter", HW: HWInfo{Serial: "RJ6W"}},
+		{Name: "old-reg", Online: false, IP: "100.0.0.9", SSHUser: "lodripeter", HW: HWInfo{Serial: "RJ6W"}},
+		{Name: "down", Online: false, IP: "100.0.0.2", SSHUser: "root", HW: HWInfo{Serial: "Z"}},
+	}
+	ms := GroupByMachine(nodes)
+	r := reachableMachines(ms)
+	if len(r) != 1 || r[0].Canonical().Name != "dev-main" {
+		t.Fatalf("reachableMachines wrong: %+v", r)
 	}
 }
 

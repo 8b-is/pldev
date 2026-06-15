@@ -24,16 +24,29 @@ func reachable(nodes []Node) []Node {
 	return out
 }
 
-// SyncSigners pushes the PUBLIC allowed_signers anchor to every reachable node's
+// reachableMachines returns machines whose canonical alias is online with an IP
+// and an ssh user (sync targets).
+func reachableMachines(machines []Machine) []Machine {
+	var out []Machine
+	for _, m := range machines {
+		n := m.Canonical()
+		if n.Online && n.IP != "" && n.SSHUser != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// SyncSigners pushes the PUBLIC allowed_signers anchor to every reachable machine's
 // ~/.config/pldev/allowed_signers (so all nodes verify the same identities). It
 // also writes the anchor locally (promoting the embedded default to the runtime
 // file). Private keys are never touched. Gated: dry-run + confirm + BatchMode.
-func SyncSigners(ctx context.Context, rep *report.Reporter, nodes []Node, anchor []byte, localPath string, dryRun, yes bool) error {
-	targets := reachable(nodes)
+func SyncSigners(ctx context.Context, rep *report.Reporter, machines []Machine, anchor []byte, localPath string, dryRun, yes bool) error {
+	targets := reachableMachines(machines)
 	if dryRun {
 		rep.SetDryRun(true)
-		for _, n := range targets {
-			rep.Do("sync-signers", n.Label())
+		for _, m := range targets {
+			rep.Do("sync-signers", m.Label())
 		}
 		fmt.Printf("would sync allowed_signers (%d bytes) to %d reachable node(s) + local\n", len(anchor), len(targets))
 		return nil
@@ -61,22 +74,23 @@ func SyncSigners(ctx context.Context, rep *report.Reporter, nodes []Node, anchor
 	tmp.Close()
 
 	var failed int
-	for _, n := range targets {
-		rep.Do("sync-signers", n.Label())
+	for _, m := range targets {
+		n := m.Canonical()
+		rep.Do("sync-signers", m.Label())
 		dst := n.SSHUser + "@" + n.IP
 		bm := append([]string{}, sshOpts...) // BatchMode + accept-new + timeout
 		if _, err := sys.Run(ctx, "ssh", append(bm, dst, "mkdir -p ~/.config/pldev")...); err != nil {
-			rep.Fail("sync-signers", n.Label(), err)
+			rep.Fail("sync-signers", m.Label(), err)
 			failed++
 			continue
 		}
 		scpArgs := append(bm, tmp.Name(), dst+":.config/pldev/allowed_signers")
 		if _, err := sys.Run(ctx, "scp", scpArgs...); err != nil {
-			rep.Fail("sync-signers", n.Label(), err)
+			rep.Fail("sync-signers", m.Label(), err)
 			failed++
 			continue
 		}
-		rep.OK("sync-signers", n.Label())
+		rep.OK("sync-signers", m.Label())
 	}
 	rep.Info("fleet-sync-signers", report.KV{K: "nodes", V: strconv.Itoa(len(targets))}, report.KV{K: "failed", V: strconv.Itoa(failed)})
 	if failed > 0 {
