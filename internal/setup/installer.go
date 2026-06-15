@@ -29,17 +29,18 @@ func BuildCmd(s PkgSpec) []string {
 	}
 }
 
-// Install runs the spec's command and any post-install hooks.
+// Install runs the spec's command and any post-install hooks wired to the real
+// terminal, so sudo can prompt and brew/apt output streams live. No output is
+// captured (interactive); only the exit error is returned.
 func Install(ctx context.Context, s PkgSpec) (string, error) {
 	argv := BuildCmd(s)
-	out, err := sys.Run(ctx, argv[0], argv[1:]...)
-	if err != nil {
-		return out, err
+	if err := sys.RunInteractive(ctx, argv[0], argv[1:]...); err != nil {
+		return "", err
 	}
 	for _, hook := range s.PostInstall {
-		if _, herr := sys.Run(ctx, "sh", "-c", hook); herr != nil {
-			return out, herr
+		if herr := sys.RunInteractive(ctx, "sh", "-c", hook); herr != nil {
+			return "", herr
 		}
 	}
-	return out, nil
+	return "", nil
 }

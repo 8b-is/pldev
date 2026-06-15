@@ -24,3 +24,12 @@ func TestRunTimeout(t *testing.T) {
 		t.Fatal("expected timeout error")
 	}
 }
+
+func TestRunInteractive(t *testing.T) {
+	if err := RunInteractive(context.Background(), "true"); err != nil {
+		t.Fatalf("true should succeed: %v", err)
+	}
+	if err := RunInteractive(context.Background(), "false"); err == nil {
+		t.Fatal("false should return non-nil error")
+	}
+}
