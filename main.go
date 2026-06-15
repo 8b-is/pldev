@@ -299,7 +299,7 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 		}
 	case "sync-signers":
 		// push the PUBLIC allowed_signers trust anchor to all reachable nodes + local
-		if err := fleet.SyncSigners(ctx, rep, machines, verify.AnchorBytes(), verify.DefaultAnchorPath(), dryRun, yes); err != nil {
+		if err := fleet.SyncSigners(ctx, rep, machines, verify.AnchorBytes(), verify.DefaultAnchorPath(), verify.PQAnchorBytes(), verify.DefaultPQAnchorPath(), dryRun, yes); err != nil {
 			os.Exit(1)
 		}
 	case "probe-user":
