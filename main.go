@@ -239,6 +239,12 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 		if err := fleet.SyncSigners(ctx, rep, nodes, verify.AnchorBytes(), verify.DefaultAnchorPath(), dryRun, yes); err != nil {
 			os.Exit(1)
 		}
+	case "probe-user":
+		sel := nodes
+		if len(pos) >= 3 {
+			sel = fleet.Select(nodes, pos[2])
+		}
+		fleet.ProbeUsers(ctx, rep, sel, nil)
 	case "ssh-config":
 		// generate ~/.ssh/config Host aliases (nickname + tailnet name) from the fleet
 		block := fleet.GenSSHConfig(nodes)
@@ -254,7 +260,7 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 		}
 		rep.OK("ssh-config", path)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: pldev fleet [list | health | ssh <node> | run <selector> -- <cmd> | sync-signers | ssh-config] [--dry-run] [--yes]")
+		fmt.Fprintln(os.Stderr, "usage: pldev fleet [list | health | ssh <node> | run <selector> -- <cmd> | sync-signers | ssh-config | probe-user [selector]] [--dry-run] [--yes]")
 		os.Exit(2)
 	}
 }
