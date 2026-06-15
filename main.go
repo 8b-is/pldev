@@ -151,12 +151,16 @@ func main() {
 		}
 		return
 	}
-	// direct subcommand: pldev pq-keygen [-out <dir>]
+	// direct subcommand: pldev pq-keygen [-out <dir>] [-principal <id>]
 	if len(positional) >= 1 && positional[0] == "pq-keygen" {
 		outDir := ""
+		principal := "brett-shaw@pldev"
 		for i := 1; i+1 < len(positional); i++ {
 			if positional[i] == "-out" {
 				outDir = positional[i+1]
+			}
+			if positional[i] == "-principal" {
+				principal = positional[i+1]
 			}
 		}
 		if outDir == "" {
@@ -167,7 +171,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
-		keyPath := filepath.Join(outDir, "brett-shaw_mldsa.key")
+		keyName := strings.NewReplacer("@", "_", "/", "_").Replace(principal) + "_mldsa.key"
+		keyPath := filepath.Join(outDir, keyName)
 		pubB64, err := pqkey.WriteKeyPair(keyPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -175,7 +180,8 @@ func main() {
 		}
 		fmt.Println("private key:", keyPath)
 		fmt.Println("public key: ", keyPath+".pub")
-		fmt.Println("brett-shaw@pldev mldsa65", pubB64)
+		fmt.Println("# paste into pq_signers:")
+		fmt.Printf("%s mldsa65 %s\n", principal, pubB64)
 		return
 	}
 	// direct subcommand: pldev pq-sign -key <keyfile> <bin>

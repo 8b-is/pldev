@@ -81,16 +81,26 @@ func SyncSigners(ctx context.Context, rep *report.Reporter, machines []Machine, 
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	tmp.Write(anchor)
-	tmp.Close()
+	if _, err := tmp.Write(anchor); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
 
 	tmpPQ, err := os.CreateTemp("", "pldev-pq-signers-*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmpPQ.Name())
-	tmpPQ.Write(pqAnchor)
-	tmpPQ.Close()
+	if _, err := tmpPQ.Write(pqAnchor); err != nil {
+		tmpPQ.Close()
+		return err
+	}
+	if err := tmpPQ.Close(); err != nil {
+		return err
+	}
 
 	var failed int
 	for _, m := range targets {
