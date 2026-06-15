@@ -61,7 +61,7 @@ func BuiltinRegistry() Registry {
 		"fzf":       {Desc: "fuzzy finder", Category: "cli", Darwin: d(brew("fzf")), Linux: d(apt("fzf"))},
 		"tmux":      {Desc: "terminal multiplexer", Category: "cli", Darwin: d(brew("tmux")), Linux: d(apt("tmux"))},
 		"neovim":    {Desc: "editor", Category: "editor", Darwin: d(brew("neovim")), Linux: d(apt("neovim"))},
-		"starship":  {Desc: "prompt", Category: "shell", Darwin: d(brew("starship")), Linux: d(brew("starship"))},
+		"starship":  {Desc: "prompt", Category: "shell", Darwin: d(brew("starship")), Linux: d(mise("starship"))},
 		"gh":        {Desc: "GitHub CLI", Category: "cli", Darwin: d(brew("gh")), Linux: d(apt("gh"))},
 		"git":       {Desc: "git", Category: "cli", Darwin: d(brew("git")), Linux: d(apt("git"))},
 		"tailscale": {Desc: "mesh VPN", Category: "net", Darwin: d(cask("tailscale")), Linux: d(apt("tailscale"))},
