@@ -196,6 +196,7 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 	cfg, _ := fleet.LoadFleetConfig(fleet.DefaultFleetConfigPath())
 	cache, _ := fleet.LoadCache(fleet.DefaultCachePath())
 	nodes := fleet.Merge(ts, cfg, cache)
+	machines := fleet.GroupByMachine(nodes)
 
 	sub := ""
 	if len(pos) >= 2 {
@@ -209,20 +210,20 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 				full = true
 			}
 		}
-		fmt.Print(fleet.Render(nodes, full))
+		fmt.Print(fleet.Render(machines, full))
 	case "health":
-		fleet.Health(ctx, rep, nodes)
+		fleet.Health(ctx, rep, machines)
 	case "ssh":
 		if len(pos) < 3 {
 			fmt.Fprintln(os.Stderr, "usage: pldev fleet ssh <node>")
 			os.Exit(2)
 		}
-		sel := fleet.Select(nodes, pos[2])
+		sel := fleet.Select(machines, pos[2])
 		if len(sel) != 1 {
 			fmt.Fprintf(os.Stderr, "fleet ssh: %q matched %d nodes (need exactly 1)\n", pos[2], len(sel))
 			os.Exit(2)
 		}
-		if err := fleet.SSH(ctx, sel[0]); err != nil {
+		if err := fleet.SSH(ctx, sel[0].Canonical()); err != nil {
 			os.Exit(1)
 		}
 	case "run":
@@ -238,19 +239,19 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 			fmt.Fprintln(os.Stderr, "usage: pldev fleet run <selector> -- <cmd> [--dry-run] [--yes]")
 			os.Exit(2)
 		}
-		sel := fleet.Select(nodes, pos[2])
+		sel := fleet.Select(machines, pos[2])
 		if err := fleet.Run(ctx, rep, sel, pos[dd+1:], dryRun, yes); err != nil {
 			os.Exit(1)
 		}
 	case "sync-signers":
 		// push the PUBLIC allowed_signers trust anchor to all reachable nodes + local
-		if err := fleet.SyncSigners(ctx, rep, nodes, verify.AnchorBytes(), verify.DefaultAnchorPath(), dryRun, yes); err != nil {
+		if err := fleet.SyncSigners(ctx, rep, machines, verify.AnchorBytes(), verify.DefaultAnchorPath(), dryRun, yes); err != nil {
 			os.Exit(1)
 		}
 	case "probe-user":
 		sel := nodes
 		if len(pos) >= 3 {
-			sel = fleet.Select(nodes, pos[2])
+			sel = fleet.SelectNodes(nodes, pos[2])
 		}
 		fleet.ProbeUsers(ctx, rep, sel, nil, fleet.DefaultCachePath())
 	case "ssh-config":
