@@ -58,3 +58,7 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 - `pldev --version` (or `pldev version`) prints embedded build info: `pldev <ver> (<sha>, <commit-date>, go1.x)`.
 - Every command logs one line per action to **stderr** (data stays on stdout). logfmt fields: `ts lvl scope action target status [k=v…] [msg]`; `status` ∈ ok/fail/skip/have/do/dry. In `--dry-run`, pending actions log as `status=dry`.
 - Env: `PLDEV_LOG=plain|pretty|json` forces render mode; `NO_COLOR=1` forces plain. Parse the log with standard logfmt tooling (`grep 'status=fail'`, etc.).
+
+## Provenance
+
+`pldev verify <path>` checks a candidate binary against its `<path>.sig` using the embedded `cosign.pub` (key-based, no public transparency log). Verify a *target* with an already-trusted pldev — never self-verify; bootstrap binary #1 once with raw `cosign`. `v*` tags are signed by `.github/workflows/release.yml`; `task sign BIN=…` signs locally (password from Vaultwarden via `bw`). Requires `cosign` (`pldev setup cosign`).
