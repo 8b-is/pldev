@@ -53,38 +53,40 @@ func classify(online, pingOK, sshOK bool) string {
 // sshPort is the port probed for the reachable tier.
 const sshPort = "22"
 
-// Health probes every node in parallel through three tiers — tailscale online,
-// TCP :22 open (reachable), ssh command (ssh-ok) — and reports one line per node
-// with its state, plus a per-state summary.
-func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
+// Health probes every machine in parallel through three tiers — tailscale online,
+// TCP :22 open (reachable), ssh command (ssh-ok) — and reports one line per machine
+// with its state, plus a per-state summary. Stale offline aliases are listed with a
+// hint to delete them in the tailnet admin.
+func Health(ctx context.Context, rep *report.Reporter, machines []Machine) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxParallel)
 	var mu sync.Mutex
 	counts := map[string]int{}
 
-	emit := func(n Node, state string) {
+	emitLabel := func(label, state string) {
 		mu.Lock()
 		defer mu.Unlock()
 		counts[state]++
 		kv := report.KV{K: "state", V: state}
 		switch state {
 		case StateSSHOK, StateReachable:
-			rep.OK("health", n.Label(), kv)
+			rep.OK("health", label, kv)
 		case StateOffline:
-			rep.Skip("health", n.Label(), state)
+			rep.Skip("health", label, state)
 		default: // unreachable
-			rep.Fail("health", n.Label(), fmt.Errorf("online but unreachable"), kv)
+			rep.Fail("health", label, fmt.Errorf("online but unreachable"), kv)
 		}
 	}
 
-	for _, n := range nodes {
+	for _, m := range machines {
+		n := m.Canonical()
 		if !n.Online {
-			emit(n, StateOffline)
+			emitLabel(m.Label(), StateOffline)
 			continue
 		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(n Node) {
+		go func(label string, n Node) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			conn, derr := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort(n.IP, sshPort))
@@ -97,8 +99,8 @@ func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
 				_, serr := sys.Run(ctx, "ssh", append(sshBase(n), "true")...)
 				sshOK = serr == nil
 			}
-			emit(n, classify(true, tcpOK, sshOK))
-		}(n)
+			emitLabel(label, classify(true, tcpOK, sshOK))
+		}(m.Label(), n)
 	}
 	wg.Wait()
 	rep.Info("fleet-health",
@@ -107,6 +109,13 @@ func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
 		report.KV{K: "unreachable", V: strconv.Itoa(counts[StateUnreachable])},
 		report.KV{K: "offline", V: strconv.Itoa(counts[StateOffline])},
 	)
+	for _, s := range staleAliases(machines) {
+		rep.Info("stale-alias",
+			report.KV{K: "machine", V: s.Machine},
+			report.KV{K: "name", V: s.Name},
+			report.KV{K: "ip", V: s.IP},
+			report.KV{K: "hint", V: "delete in tailnet admin"})
+	}
 }
 
 // SSH opens an interactive shell to the node (accepts the host key on first
@@ -115,24 +124,25 @@ func SSH(ctx context.Context, n Node) error {
 	return sys.RunInteractive(ctx, "ssh", "-o", "StrictHostKeyChecking=accept-new", n.SSHUser+"@"+n.IP)
 }
 
-// Run fan-outs cmd across the given nodes. dryRun prints the plan and runs
+// Run fan-outs cmd across the given machines. dryRun prints the plan and runs
 // nothing; otherwise it confirms (unless yes), then runs in parallel over
-// BatchMode ssh, printing per-node output to stdout and ok/fail via the report.
-func Run(ctx context.Context, rep *report.Reporter, nodes []Node, cmd []string, dryRun, yes bool) error {
+// BatchMode ssh on each machine's canonical node, printing per-machine output
+// to stdout and ok/fail via the report.
+func Run(ctx context.Context, rep *report.Reporter, machines []Machine, cmd []string, dryRun, yes bool) error {
 	cmdStr := strings.Join(cmd, " ")
 	if dryRun {
 		rep.SetDryRun(true) // so Do emits status=dry
-		for _, n := range nodes {
-			rep.Do("run", n.Label())
+		for _, m := range machines {
+			rep.Do("run", m.Label())
 		}
-		fmt.Printf("would run on %d node(s): %s\n", len(nodes), cmdStr)
+		fmt.Printf("would run on %d node(s): %s\n", len(machines), cmdStr)
 		return nil
 	}
-	if len(nodes) == 0 {
+	if len(machines) == 0 {
 		rep.Info("no matching nodes")
 		return nil
 	}
-	if !yes && !confirm(fmt.Sprintf("Run %q on %d node(s)?", cmdStr, len(nodes))) {
+	if !yes && !confirm(fmt.Sprintf("Run %q on %d node(s)?", cmdStr, len(machines))) {
 		rep.Info("aborted")
 		return nil
 	}
@@ -142,28 +152,29 @@ func Run(ctx context.Context, rep *report.Reporter, nodes []Node, cmd []string, 
 	var mu sync.Mutex
 	var ok, failed int
 
-	for _, n := range nodes {
+	for _, m := range machines {
+		n := m.Canonical()
 		if !n.Online {
-			rep.Skip("run", n.Label(), "offline")
+			rep.Skip("run", m.Label(), "offline")
 			continue
 		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(n Node) {
+		go func(label string, n Node) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			out, err := sys.Run(ctx, "ssh", append(sshBase(n), cmd...)...)
 			mu.Lock()
 			defer mu.Unlock()
-			fmt.Printf("=== %s ===\n%s\n", n.Label(), strings.TrimRight(out, "\n"))
+			fmt.Printf("=== %s ===\n%s\n", label, strings.TrimRight(out, "\n"))
 			if err != nil {
-				rep.Fail("run", n.Label(), err)
+				rep.Fail("run", label, err)
 				failed++
 				return
 			}
-			rep.OK("run", n.Label())
+			rep.OK("run", label)
 			ok++
-		}(n)
+		}(m.Label(), n)
 	}
 	wg.Wait()
 	rep.Info("fleet-run", report.KV{K: "ok", V: strconv.Itoa(ok)}, report.KV{K: "failed", V: strconv.Itoa(failed)})

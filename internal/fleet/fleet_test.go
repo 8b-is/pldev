@@ -119,7 +119,7 @@ func TestRunDryRunNoExec(t *testing.T) {
 	rep := report.New(&buf, "fleet")
 	nodes := Merge(tsNodes(), cfg(), nil)
 	// dry-run must not touch ssh; returns nil regardless of reachability
-	if err := Run(context.Background(), rep, nodes, []string{"uname", "-a"}, true, false); err != nil {
+	if err := Run(context.Background(), rep, GroupByMachine(nodes), []string{"uname", "-a"}, true, false); err != nil {
 		t.Fatalf("dry-run err: %v", err)
 	}
 	if !strings.Contains(buf.String(), "status=dry") {
@@ -134,7 +134,7 @@ func TestRunConfirmDeclineNoExec(t *testing.T) {
 	var buf strings.Builder
 	rep := report.New(&buf, "fleet")
 	// declined → returns nil before any ssh
-	if err := Run(context.Background(), rep, Merge(tsNodes(), cfg(), nil), []string{"echo"}, false, false); err != nil {
+	if err := Run(context.Background(), rep, GroupByMachine(Merge(tsNodes(), cfg(), nil)), []string{"echo"}, false, false); err != nil {
 		t.Fatalf("declined run err: %v", err)
 	}
 	if !strings.Contains(buf.String(), "aborted") {
