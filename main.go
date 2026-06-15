@@ -12,6 +12,7 @@ import (
 	"github.com/peterlodri-sec/pldev/internal/doctor/mem"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
 	"github.com/peterlodri-sec/pldev/internal/arp"
+	"github.com/peterlodri-sec/pldev/internal/fleet"
 	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/setup"
 	"github.com/peterlodri-sec/pldev/internal/setup/recipe"
@@ -91,6 +92,11 @@ func main() {
 		}
 		return
 	}
+	// direct subcommand: pldev fleet <list|health|ssh|run>
+	if len(positional) >= 1 && positional[0] == "fleet" {
+		runFleet(ctx, rep.Sub("fleet"), positional, setupDryRun, opts.YesSafe)
+		return
+	}
 	// direct subcommand: pldev setup <recipe> (composite flows like ruflo)
 	if len(positional) >= 2 && positional[0] == "setup" {
 		if r, ok := recipe.Named(positional[1]); ok {
@@ -127,6 +133,60 @@ func main() {
 	}
 	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps | setup | version] [--report] [--yes] [--no-color] [--dry-run] [--list] [--version]")
 	os.Exit(2)
+}
+
+func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, yes bool) {
+	ts, err := fleet.Discover(ctx)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error: tailscale discovery failed:", err)
+		os.Exit(1)
+	}
+	cfg, _ := fleet.LoadFleetConfig(fleet.DefaultFleetConfigPath())
+	nodes := fleet.Merge(ts, cfg)
+
+	sub := ""
+	if len(pos) >= 2 {
+		sub = pos[1]
+	}
+	switch sub {
+	case "", "list":
+		fmt.Print(fleet.Render(nodes)) // data → stdout
+	case "health":
+		fleet.Health(ctx, rep, nodes)
+	case "ssh":
+		if len(pos) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: pldev fleet ssh <node>")
+			os.Exit(2)
+		}
+		sel := fleet.Select(nodes, pos[2])
+		if len(sel) != 1 {
+			fmt.Fprintf(os.Stderr, "fleet ssh: %q matched %d nodes (need exactly 1)\n", pos[2], len(sel))
+			os.Exit(2)
+		}
+		if err := fleet.SSH(ctx, sel[0]); err != nil {
+			os.Exit(1)
+		}
+	case "run":
+		// pldev fleet run <selector> -- <cmd...>
+		dd := -1
+		for i, a := range pos {
+			if a == "--" {
+				dd = i
+				break
+			}
+		}
+		if len(pos) < 3 || dd < 0 || dd+1 >= len(pos) {
+			fmt.Fprintln(os.Stderr, "usage: pldev fleet run <selector> -- <cmd> [--dry-run] [--yes]")
+			os.Exit(2)
+		}
+		sel := fleet.Select(nodes, pos[2])
+		if err := fleet.Run(ctx, rep, sel, pos[dd+1:], dryRun, yes); err != nil {
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintln(os.Stderr, "usage: pldev fleet [list | health | ssh <node> | run <selector> -- <cmd>]")
+		os.Exit(2)
+	}
 }
 
 func runPS(ctx context.Context) {
