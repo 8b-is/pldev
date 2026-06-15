@@ -64,7 +64,7 @@ func SyncSigners(ctx context.Context, rep *report.Reporter, nodes []Node, anchor
 	for _, n := range targets {
 		rep.Do("sync-signers", n.Label())
 		dst := n.SSHUser + "@" + n.IP
-		bm := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=6"}
+		bm := append([]string{}, sshOpts...) // BatchMode + accept-new + timeout
 		if _, err := sys.Run(ctx, "ssh", append(bm, dst, "mkdir -p ~/.config/pldev")...); err != nil {
 			rep.Fail("sync-signers", n.Label(), err)
 			failed++

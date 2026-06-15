@@ -19,8 +19,13 @@ const maxParallel = 8
 // confirm is the gate for live fan-out exec; overridable in tests.
 var confirm = tui.Confirm
 
+// sshOpts are the common non-interactive ssh flags: key-auth only, accept a
+// node's host key on first contact (TOFU — else unknown hosts are rejected and
+// look like access failures), bounded connect.
+var sshOpts = []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=6"}
+
 func sshBase(n Node) []string {
-	return []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=6", n.SSHUser + "@" + n.IP}
+	return append(append([]string{}, sshOpts...), n.SSHUser+"@"+n.IP)
 }
 
 // Health states, from worst to best.
@@ -104,9 +109,10 @@ func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
 	)
 }
 
-// SSH opens an interactive shell to the node.
+// SSH opens an interactive shell to the node (accepts the host key on first
+// contact; interactive auth otherwise — no BatchMode).
 func SSH(ctx context.Context, n Node) error {
-	return sys.RunInteractive(ctx, "ssh", n.SSHUser+"@"+n.IP)
+	return sys.RunInteractive(ctx, "ssh", "-o", "StrictHostKeyChecking=accept-new", n.SSHUser+"@"+n.IP)
 }
 
 // Run fan-outs cmd across the given nodes. dryRun prints the plan and runs
