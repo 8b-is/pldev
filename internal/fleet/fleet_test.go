@@ -210,3 +210,12 @@ func TestTrunc(t *testing.T) {
 		t.Fatalf("trunc must leave short strings: %q", got)
 	}
 }
+
+func TestMergeFillsPrimary(t *testing.T) {
+	ts := []TSNode{{Name: "dev-main", IP: "100.0.0.1", Online: true}}
+	cfg := FleetConfig{Node: map[string]NodeConfig{"dev-main": {Primary: true}}}
+	nodes := Merge(ts, cfg, nil)
+	if len(nodes) != 1 || !nodes[0].Primary {
+		t.Fatalf("Merge did not propagate Primary: %+v", nodes)
+	}
+}

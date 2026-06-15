@@ -21,6 +21,7 @@ type Node struct {
 	SSHUser  string
 	Excluded bool
 	HW       HWInfo
+	Primary  bool
 	Dup      bool   // shares a serial with an earlier node
 	DupOf    string // label of that earlier node
 }
@@ -52,7 +53,7 @@ func Merge(ts []TSNode, cfg FleetConfig, cache FleetCache) []Node {
 		}
 		out = append(out, Node{
 			Name: t.Name, Nickname: nc.Nickname, IP: t.IP, OS: t.OS, Online: t.Online, Tags: t.Tags,
-			Role: nc.Role, Caps: nc.Caps, SSHUser: user, HW: cache[t.Name].HW,
+			Role: nc.Role, Caps: nc.Caps, SSHUser: user, Primary: nc.Primary, HW: cache[t.Name].HW,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Label() < out[j].Label() })
