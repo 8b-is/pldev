@@ -1,17 +1,36 @@
 version: '3'
+
+vars:
+  PKG: github.com/peterlodri-sec/pldev/internal/buildinfo
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo none
+  DATE:
+    sh: git log -1 --format=%cI 2>/dev/null || echo unknown
+  LDFLAGS: >-
+    -X {{.PKG}}.Version={{.VERSION}}
+    -X {{.PKG}}.Commit={{.COMMIT}}
+    -X {{.PKG}}.Date={{.DATE}}
+
 tasks:
   build:
-    cmds: ['go build -o pldev .']
+    cmds: ['go build -ldflags "{{.LDFLAGS}}" -o pldev .']
   install:
-    cmds: ['go build -o "{{.HOME}}/.local/bin/pldev" .']
+    cmds: ['go build -ldflags "{{.LDFLAGS}}" -o "{{.HOME}}/.local/bin/pldev" .']
     env: { HOME: '{{.HOME}}' }
   test:
     cmds: ['go test ./...']
   lint:
     cmds: ['go vet ./...']
+  version:
+    desc: Build and print embedded build info
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o pldev .
+      - ./pldev --version
   cross:
     cmds:
-      - GOOS=darwin GOARCH=arm64 go build -o dist/pldev-darwin-arm64 .
-      - GOOS=darwin GOARCH=amd64 go build -o dist/pldev-darwin-amd64 .
-      - GOOS=linux  GOARCH=arm64 go build -o dist/pldev-linux-arm64 .
-      - GOOS=linux  GOARCH=amd64 go build -o dist/pldev-linux-amd64 .
+      - GOOS=darwin GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o dist/pldev-darwin-arm64 .
+      - GOOS=darwin GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o dist/pldev-darwin-amd64 .
+      - GOOS=linux  GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o dist/pldev-linux-arm64 .
+      - GOOS=linux  GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o dist/pldev-linux-amd64 .

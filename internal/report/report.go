@@ -89,6 +89,9 @@ func (r *Reporter) Sub(scope string) *Reporter {
 // instead of announcing a real action.
 func (r *Reporter) SetDryRun(v bool) { r.dryRun = v }
 
+// DryRun reports whether the reporter is in dry-run mode.
+func (r *Reporter) DryRun() bool { return r.dryRun }
+
 // Do announces the start of a (potentially long) action. In dry-run it emits
 // status=dry instead.
 func (r *Reporter) Do(action, target string) {

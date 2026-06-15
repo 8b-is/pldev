@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/peterlodri-sec/pldev/internal/doctor/fix"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
+	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/tui"
 )
 
@@ -22,10 +24,14 @@ func defaultRoots() []string {
 	return []string{filepath.Join(home, "workspace")}
 }
 
-// Run collects the report, prints it, and (unless ReportOnly) offers fixes.
-func Run(ctx context.Context, c probe.Collector, opts Options) error {
+// Run collects the report, prints it (stdout), and (unless ReportOnly) offers
+// fixes via the action logger rep. Pass nil to auto-create a stderr reporter.
+func Run(ctx context.Context, c probe.Collector, opts Options, rep *report.Reporter) error {
+	if rep == nil {
+		rep = report.New(os.Stderr, "doctor")
+	}
 	r := probe.Collect(ctx, c, defaultRoots())
-	fmt.Println(RenderPlain(r))
+	fmt.Println(RenderPlain(r)) // data output stays on stdout
 
 	if opts.ReportOnly {
 		return nil
@@ -33,19 +39,24 @@ func Run(ctx context.Context, c probe.Collector, opts Options) error {
 
 	fixes := buildFixes(r)
 	if len(fixes) == 0 {
-		fmt.Println("No fixes suggested. System looks OK.")
+		rep.Info("no fixes suggested")
 		return nil
 	}
 
 	if opts.YesSafe {
 		for _, f := range fix.SafeOnly(fixes) {
+			rep.Do("fix", f.Title())
 			out, err := f.Apply(ctx)
-			fmt.Printf("[auto] %s: %s %v\n", f.Title(), out, err)
+			if err != nil {
+				rep.Fail("fix", f.Title(), err, report.KV{K: "out", V: out})
+			} else {
+				rep.OK("fix", f.Title(), report.KV{K: "out", V: out})
+			}
 		}
 		return nil
 	}
 
-	return interactiveFixMenu(ctx, fixes)
+	return interactiveFixMenu(ctx, fixes, rep)
 }
 
 func buildFixes(r probe.MemReport) []fix.Fix {
@@ -67,33 +78,39 @@ func buildFixes(r probe.MemReport) []fix.Fix {
 	return fixes
 }
 
-func interactiveFixMenu(ctx context.Context, fixes []fix.Fix) error {
+func interactiveFixMenu(ctx context.Context, fixes []fix.Fix, rep *report.Reporter) error {
 	var applied, skipped, failed int
 	for _, f := range fixes {
-		tag := "SAFE"
+		safety := "safe"
 		if !f.Safe() {
-			tag = "DESTRUCTIVE"
+			safety = "destructive"
 		}
-		fmt.Printf("\n[%s] %s\n  %s\n", tag, f.Title(), f.Describe())
+		// Print fix description to stdout so user can read it before confirming.
+		fmt.Printf("\n[%s] %s\n  %s\n", safety, f.Title(), f.Describe())
 
 		prompt := "Apply this fix?"
 		if !f.Safe() {
 			prompt = "Apply this DESTRUCTIVE fix?"
 		}
 		if !tui.Confirm(prompt) {
-			fmt.Println("  skipped.")
+			rep.Skip("fix", f.Title(), "user skipped")
 			skipped++
 			continue
 		}
+		rep.Do("fix", f.Title())
 		out, err := f.Apply(ctx)
 		if err != nil {
-			fmt.Printf("  ERROR: %v\n", err)
+			rep.Fail("fix", f.Title(), err)
 			failed++
 			continue
 		}
-		fmt.Printf("  done: %s\n", out)
+		rep.OK("fix", f.Title(), report.KV{K: "out", V: out})
 		applied++
 	}
-	fmt.Printf("\nSummary: %d applied, %d skipped, %d failed\n", applied, skipped, failed)
+	rep.Info("doctor-summary",
+		report.KV{K: "applied", V: strconv.Itoa(applied)},
+		report.KV{K: "skipped", V: strconv.Itoa(skipped)},
+		report.KV{K: "failed", V: strconv.Itoa(failed)},
+	)
 	return nil
 }
