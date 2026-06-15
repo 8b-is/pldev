@@ -18,6 +18,7 @@ import (
 	"github.com/peterlodri-sec/pldev/internal/setup/recipe"
 	"github.com/peterlodri-sec/pldev/internal/sysinfo"
 	"github.com/peterlodri-sec/pldev/internal/tui"
+	"github.com/peterlodri-sec/pldev/internal/verify"
 )
 
 func main() {
@@ -95,6 +96,17 @@ func main() {
 	// direct subcommand: pldev fleet <list|health|ssh|run>
 	if len(positional) >= 1 && positional[0] == "fleet" {
 		runFleet(ctx, rep.Sub("fleet"), positional, setupDryRun, opts.YesSafe)
+		return
+	}
+	// direct subcommand: pldev verify <path> (binary provenance — verify a target)
+	if len(positional) >= 1 && positional[0] == "verify" {
+		if len(positional) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: pldev verify <path-to-binary>")
+			os.Exit(2)
+		}
+		if err := verify.Verify(ctx, rep.Sub("verify"), positional[1]); err != nil {
+			os.Exit(1)
+		}
 		return
 	}
 	// direct subcommand: pldev setup <recipe> (composite flows like ruflo)

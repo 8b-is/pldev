@@ -69,3 +69,7 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 - `pldev fleet run <selector> -- <cmd>` — parallel fan-out exec; selector = `all` / `@<role>` / `<name>`. **Gated:** `--dry-run` previews, confirm unless `--yes`, ssh key-auth only. Offline nodes skipped.
 
 ruflo-federation (over the `crabcc-nats` bus) + ruvllm→Ollama routing (keyed on `caps`) layer on top — separate specs.
+
+## Provenance
+
+`pldev verify <path>` checks a candidate binary against its `<path>.sig` using the embedded `cosign.pub` (key-based, no public transparency log). Verify a *target* with an already-trusted pldev — never self-verify; bootstrap binary #1 once with raw `cosign`. `v*` tags are signed by `.github/workflows/release.yml`; `task sign BIN=…` signs locally (password from Vaultwarden via `bw`). Requires `cosign` (`pldev setup cosign`).
