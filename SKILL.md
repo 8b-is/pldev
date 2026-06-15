@@ -59,6 +59,17 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 - Every command logs one line per action to **stderr** (data stays on stdout). logfmt fields: `ts lvl scope action target status [k=v…] [msg]`; `status` ∈ ok/fail/skip/have/do/dry. In `--dry-run`, pending actions log as `status=dry`.
 - Env: `PLDEV_LOG=plain|pretty|json` forces render mode; `NO_COLOR=1` forces plain. Parse the log with standard logfmt tooling (`grep 'status=fail'`, etc.).
 
+## fleet (federation substrate)
+
+`pldev fleet` is a tailscale-discovered, config-annotated node registry. `~/.config/pldev/fleet.toml` annotates each node by short name: `[node.<name>]` with `nickname`, `role`, `caps`, `ssh_user`, `exclude` (+ a top-level `default_ssh_user`). Set real `ssh_user`s there or `health`/`ssh`/`run` can't reach nodes. A `nickname` becomes the node's primary display identity (lore name) and is selectable (case-insensitive) anywhere a node name is — `pldev fleet ssh Katedralis`.
+
+- `pldev fleet list` — table (node/role/os/status/caps).
+- `pldev fleet health` — parallel reachability (offline + ssh BatchMode probe).
+- `pldev fleet ssh <node>` — interactive shell.
+- `pldev fleet run <selector> -- <cmd>` — parallel fan-out exec; selector = `all` / `@<role>` / `<name>`. **Gated:** `--dry-run` previews, confirm unless `--yes`, ssh key-auth only. Offline nodes skipped.
+
+ruflo-federation (over the `crabcc-nats` bus) + ruvllm→Ollama routing (keyed on `caps`) layer on top — separate specs.
+
 ## Provenance
 
 `pldev verify <path>` checks a candidate binary against its `<path>.sig` using the embedded `cosign.pub` (key-based, no public transparency log). Verify a *target* with an already-trusted pldev — never self-verify; bootstrap binary #1 once with raw `cosign`. `v*` tags are signed by `.github/workflows/release.yml`; `task sign BIN=…` signs locally (password from Vaultwarden via `bw`). Requires `cosign` (`pldev setup cosign`).
