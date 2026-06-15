@@ -8,6 +8,9 @@ func Named(name string) (Recipe, bool) {
 	case "ruflo":
 		cfg, _ := LoadRufloConfig(DefaultRufloConfigPath())
 		return BuildRufloRecipe(cfg, BitwardenAuth{}, SSHRunner{}), true
+	case "arp":
+		cfg, _ := LoadArpConfig(DefaultRufloConfigPath())
+		return BuildArpRecipe(cfg), true
 	default:
 		return Recipe{}, false
 	}
