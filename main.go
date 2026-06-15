@@ -12,6 +12,7 @@ import (
 	"github.com/peterlodri-sec/pldev/internal/doctor/mem"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
 	"github.com/peterlodri-sec/pldev/internal/arp"
+	"github.com/peterlodri-sec/pldev/internal/fed"
 	"github.com/peterlodri-sec/pldev/internal/fleet"
 	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/setup"
@@ -96,6 +97,33 @@ func main() {
 	// direct subcommand: pldev fleet <list|health|ssh|run>
 	if len(positional) >= 1 && positional[0] == "fleet" {
 		runFleet(ctx, rep.Sub("fleet"), positional, setupDryRun, opts.YesSafe)
+		return
+	}
+	// direct subcommand: pldev fed status (federation observability)
+	if len(positional) >= 1 && positional[0] == "fed" {
+		sub := ""
+		if len(positional) >= 2 {
+			sub = positional[1]
+		}
+		if sub != "" && sub != "status" {
+			fmt.Fprintln(os.Stderr, "usage: pldev fed status")
+			os.Exit(2)
+		}
+		ts, err := fleet.Discover(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error: tailscale discovery failed:", err)
+			os.Exit(1)
+		}
+		cfg, _ := fleet.LoadFleetConfig(fleet.DefaultFleetConfigPath())
+		nodes := fleet.Merge(ts, cfg)
+		base, err := fed.BusURL(nodes, cfg.Federation.MonitorURL)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		if err := fed.Status(ctx, rep.Sub("fed"), nodes, base); err != nil {
+			os.Exit(1)
+		}
 		return
 	}
 	// direct subcommand: pldev verify <path> (binary provenance — verify a target)

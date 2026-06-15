@@ -20,6 +20,12 @@ type NodeConfig struct {
 type FleetConfig struct {
 	DefaultSSHUser string                `toml:"default_ssh_user"`
 	Node           map[string]NodeConfig `toml:"node"` // keyed by short name
+	Federation     FederationConfig      `toml:"federation"`
+}
+
+// FederationConfig holds federation-wide settings.
+type FederationConfig struct {
+	MonitorURL string `toml:"monitor_url"` // overrides the role="bus" NATS monitoring URL
 }
 
 // DefaultFleetConfigPath is where fleet annotations live.
