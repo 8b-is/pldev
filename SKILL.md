@@ -64,9 +64,11 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 `pldev fleet` is a tailscale-discovered, config-annotated node registry. `~/.config/pldev/fleet.toml` annotates each node by short name: `[node.<name>]` with `nickname`, `role`, `caps`, `ssh_user`, `exclude` (+ a top-level `default_ssh_user`). Set real `ssh_user`s there or `health`/`ssh`/`run` can't reach nodes. A `nickname` becomes the node's primary display identity (lore name) and is selectable (case-insensitive) anywhere a node name is — `pldev fleet ssh Katedralis`.
 
 - `pldev fleet list` — table (node/role/os/status/caps).
-- `pldev fleet health` — parallel reachability (offline + ssh BatchMode probe).
+- `pldev fleet health` — parallel 3-tier probe → 4 states per node: **offline** (tailscale down) · **unreachable** (online but TCP :22 won't connect) · **reachable** (port open, ssh command failed — usually wrong `ssh_user`) · **ssh-ok** (fully usable). Per-state summary line.
 - `pldev fleet ssh <node>` — interactive shell.
 - `pldev fleet run <selector> -- <cmd>` — parallel fan-out exec; selector = `all` / `@<role>` / `<name>`. **Gated:** `--dry-run` previews, confirm unless `--yes`, ssh key-auth only. Offline nodes skipped.
+- `pldev fleet sync-signers` — push the PUBLIC `allowed_signers` trust anchor (the provenance signers) to every reachable node's `~/.config/pldev/allowed_signers` + local, so all nodes verify the same identities. **Private keys never sync** (signing stays on origin). Gated (`--dry-run`/`--yes`). Run this after adding a signer to `internal/verify/allowed_signers`.
+- `pldev fleet ssh-config` — generate `~/.ssh/config` Host aliases (nickname + tailnet name → HostName/User) in a managed block (backs up first), so `ssh Katedralis` / `ssh Herald` work. `--dry-run` prints the block.
 
 `pldev fed status` — read-only swarm view: fetches the NATS bus monitoring endpoint (`:8222` `/varz`+`/connz`) on the `role="bus"` node (the Herald; override with `[federation] monitor_url`), and renders server health + connected clients mapped to fleet nicknames. Populates once ruflo-federation connects agents.
 
@@ -74,4 +76,4 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 
 ## Provenance
 
-`pldev verify <path>` checks a candidate binary against its `<path>.sig` using the embedded `cosign.pub` (key-based, no public transparency log). Verify a *target* with an already-trusted pldev — never self-verify; bootstrap binary #1 once with raw `cosign`. `v*` tags are signed by `.github/workflows/release.yml`; `task sign BIN=…` signs locally (password from Vaultwarden via `bw`). Requires `cosign` (`pldev setup cosign`).
+`pldev verify <path>` checks a candidate binary against its `<path>.sig` using the embedded `internal/verify/allowed_signers` trust anchor (**ssh-keygen** signatures — key-based, no transparency log, reuses your ssh keys). It resolves the signer (must be in `allowed_signers`) then verifies over the file. Verify a *target* with an already-trusted pldev — never self-verify; bootstrap binary #1 once with raw `ssh-keygen -Y verify`. `v*` tags are signed by `.github/workflows/release.yml` (key from the `SSH_SIGNING_KEY` secret); `task sign BIN=… [KEY=~/.ssh/id_ed25519]` signs locally (ssh-keygen prompts for the passphrase / uses ssh-agent). Adding a trusted signer = a line in `allowed_signers` (`<id> ssh-ed25519 <key>`) — also where the gmail/cabotage identities land later. Built-in `ssh-keygen`, no extra install.

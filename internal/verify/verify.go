@@ -1,22 +1,46 @@
 // Package verify provides pldev's binary-provenance check: it verifies a
-// candidate binary against its detached cosign signature using the embedded
-// trust anchor (cosign.pub). It verifies a TARGET, never itself — a tampered
-// binary cannot be trusted to self-verify. Trust is the committed cosign.pub.
+// candidate binary against its detached ssh-keygen signature using the embedded
+// allowed_signers trust anchor. SSH signatures are key-based with no
+// transparency log (private repos stay private) and reuse the user's existing
+// ssh keys. It verifies a TARGET, never itself — a tampered binary cannot be
+// trusted to self-verify. Trust is the committed allowed_signers file.
 package verify
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/peterlodri-sec/pldev/internal/report"
 )
 
-//go:embed cosign.pub
-var pubKey []byte
+//go:embed allowed_signers
+var allowedSigners []byte
+
+// namespace scopes signatures to pldev (ssh-keygen -Y -n).
+const namespace = "pldev"
+
+// DefaultAnchorPath is the runtime trust-anchor override (synced across the
+// fleet by `pldev fleet sync-signers`).
+func DefaultAnchorPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "pldev", "allowed_signers")
+}
+
+// AnchorBytes returns the effective allowed_signers: the runtime file if it
+// exists and is non-empty, else the embedded default. This is what every node
+// verifies against, so syncing the file syncs the trust.
+func AnchorBytes() []byte {
+	if b, err := os.ReadFile(DefaultAnchorPath()); err == nil && len(bytes.TrimSpace(b)) > 0 {
+		return b
+	}
+	return allowedSigners
+}
 
 // Indirection points for tests.
 var (
@@ -24,20 +48,21 @@ var (
 	lookPath = exec.LookPath
 )
 
-func defaultRun(ctx context.Context, name string, args ...string) (string, error) {
+func defaultRun(ctx context.Context, stdin []byte, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// writeTempPub materializes the embedded trust anchor for cosign (which reads a
-// key file, not stdin). Caller removes it.
-func writeTempPub() (string, error) {
-	f, err := os.CreateTemp("", "pldev-cosign-*.pub")
+func writeTempAnchor() (string, error) {
+	f, err := os.CreateTemp("", "pldev-allowed-signers-*")
 	if err != nil {
 		return "", err
 	}
-	if _, err := f.Write(pubKey); err != nil {
+	if _, err := f.Write(AnchorBytes()); err != nil {
 		f.Close()
 		os.Remove(f.Name())
 		return "", err
@@ -46,12 +71,13 @@ func writeTempPub() (string, error) {
 }
 
 // Verify checks the candidate binary at path against path+".sig" using the
-// embedded cosign.pub. Key-based, no transparency log (nothing public).
+// embedded allowed_signers. It first resolves the signer (which must be
+// trusted), then verifies the signature over the file contents.
 func Verify(ctx context.Context, rep *report.Reporter, path string) error {
 	rep.Do("verify", path)
 
-	if _, err := lookPath("cosign"); err != nil {
-		e := fmt.Errorf("cosign not found — install it (pldev setup adds it)")
+	if _, err := lookPath("ssh-keygen"); err != nil {
+		e := fmt.Errorf("ssh-keygen not found")
 		rep.Fail("verify", path, e)
 		return e
 	}
@@ -61,25 +87,33 @@ func Verify(ctx context.Context, rep *report.Reporter, path string) error {
 		rep.Fail("verify", path, e)
 		return e
 	}
-	pub, err := writeTempPub()
+	anchor, err := writeTempAnchor()
 	if err != nil {
 		rep.Fail("verify", path, err)
 		return err
 	}
-	defer os.Remove(pub)
+	defer os.Remove(anchor)
 
-	out, err := run(ctx, "cosign", verifyArgs(pub, sig, path)...)
+	// Who signed it? Errors if the signer isn't in allowed_signers (untrusted).
+	out, err := run(ctx, nil, "ssh-keygen", "-Y", "find-principals", "-s", sig, "-f", anchor)
 	if err != nil {
-		e := fmt.Errorf("unverified: %v", err)
+		e := fmt.Errorf("untrusted signer (not in allowed_signers)")
 		rep.Fail("verify", path, e, report.KV{K: "out", V: strings.TrimSpace(out)})
 		return e
 	}
-	rep.OK("verify", path, report.KV{K: "by", V: "cosign.pub"})
-	return nil
-}
+	identity := strings.TrimSpace(strings.SplitN(out, "\n", 2)[0])
 
-// verifyArgs is the cosign argv: key-based, transparency log ignored (we never
-// upload to one).
-func verifyArgs(pub, sig, path string) []string {
-	return []string{"verify-blob", "--key", pub, "--signature", sig, "--insecure-ignore-tlog", path}
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		rep.Fail("verify", path, err)
+		return err
+	}
+	vout, err := run(ctx, blob, "ssh-keygen", "-Y", "verify", "-n", namespace, "-f", anchor, "-I", identity, "-s", sig)
+	if err != nil {
+		e := fmt.Errorf("unverified: %v", err)
+		rep.Fail("verify", path, e, report.KV{K: "out", V: strings.TrimSpace(vout)})
+		return e
+	}
+	rep.OK("verify", path, report.KV{K: "signer", V: identity})
+	return nil
 }

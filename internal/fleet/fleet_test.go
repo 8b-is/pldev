@@ -96,6 +96,24 @@ func TestRender(t *testing.T) {
 	}
 }
 
+func TestClassifyHealthStates(t *testing.T) {
+	cases := []struct {
+		online, ping, ssh bool
+		want              string
+	}{
+		{false, false, false, StateOffline},
+		{true, false, false, StateUnreachable},
+		{true, true, false, StateReachable},
+		{true, true, true, StateSSHOK},
+		{false, true, true, StateOffline}, // offline dominates
+	}
+	for _, c := range cases {
+		if got := classify(c.online, c.ping, c.ssh); got != c.want {
+			t.Errorf("classify(%v,%v,%v)=%q want %q", c.online, c.ping, c.ssh, got, c.want)
+		}
+	}
+}
+
 func TestRunDryRunNoExec(t *testing.T) {
 	var buf strings.Builder
 	rep := report.New(&buf, "fleet")

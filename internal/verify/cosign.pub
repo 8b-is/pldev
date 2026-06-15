@@ -1,5 +1,0 @@
------BEGIN PLACEHOLDER-----
-pldev provenance trust anchor.
-Replace via `task keygen` (commit the real cosign.pub here).
-Until then `pldev verify` cannot succeed against a real signature.
------END PLACEHOLDER-----

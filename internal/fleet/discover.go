@@ -4,10 +4,11 @@ package fleet
 
 import (
 	"context"
-	"encoding/json"
+	"net/netip"
 	"strings"
 
-	"github.com/peterlodri-sec/pldev/internal/sys"
+	"tailscale.com/client/tailscale"
+	"tailscale.com/ipn/ipnstate"
 )
 
 // TSNode is the slice of tailscale's view that fleet uses.
@@ -19,20 +20,6 @@ type TSNode struct {
 	Tags   []string
 }
 
-type tsPeer struct {
-	HostName     string   `json:"HostName"`
-	DNSName      string   `json:"DNSName"`
-	OS           string   `json:"OS"`
-	Online       bool     `json:"Online"`
-	TailscaleIPs []string `json:"TailscaleIPs"`
-	Tags         []string `json:"Tags"`
-}
-
-type tsStatus struct {
-	Self *tsPeer            `json:"Self"`
-	Peer map[string]*tsPeer `json:"Peer"`
-}
-
 func shortName(dns, host string) string {
 	if dns != "" {
 		return strings.SplitN(strings.TrimSuffix(dns, "."), ".", 2)[0]
@@ -40,52 +27,61 @@ func shortName(dns, host string) string {
 	return host
 }
 
-func firstV4(ips []string) string {
+func firstV4(ips []netip.Addr) string {
 	for _, ip := range ips {
-		if strings.Count(ip, ".") == 3 {
-			return ip
+		if ip.Is4() {
+			return ip.String()
 		}
 	}
 	if len(ips) > 0 {
-		return ips[0]
+		return ips[0].String()
 	}
 	return ""
 }
 
-func (p *tsPeer) toNode() TSNode {
+func tags(t *ipnstate.PeerStatus) []string {
+	if t.Tags == nil {
+		return nil
+	}
+	out := make([]string, 0, t.Tags.Len())
+	for i := 0; i < t.Tags.Len(); i++ {
+		out = append(out, t.Tags.At(i))
+	}
+	return out
+}
+
+func peerNode(p *ipnstate.PeerStatus) TSNode {
 	return TSNode{
 		Name:   shortName(p.DNSName, p.HostName),
 		IP:     firstV4(p.TailscaleIPs),
 		OS:     p.OS,
 		Online: p.Online,
-		Tags:   p.Tags,
+		Tags:   tags(p),
 	}
 }
 
-// ParseStatus turns `tailscale status --json` output into nodes (Self + Peers).
+// fromStatus maps a tailscale LocalAPI status into fleet nodes (Self + Peers).
 // Self is always treated as online (it's the local machine).
-func ParseStatus(data []byte) ([]TSNode, error) {
-	var s tsStatus
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, err
-	}
+func fromStatus(st *ipnstate.Status) []TSNode {
 	var nodes []TSNode
-	if s.Self != nil {
-		self := s.Self.toNode()
+	if st.Self != nil {
+		self := peerNode(st.Self)
 		self.Online = true
 		nodes = append(nodes, self)
 	}
-	for _, p := range s.Peer {
-		nodes = append(nodes, p.toNode())
+	for _, p := range st.Peer {
+		nodes = append(nodes, peerNode(p))
 	}
-	return nodes, nil
+	return nodes
 }
 
-// Discover runs tailscale and parses the fleet.
+// Discover queries tailscaled directly via its local API (no `tailscale` CLI)
+// and maps the result into fleet nodes.
 func Discover(ctx context.Context) ([]TSNode, error) {
-	out, err := sys.Run(ctx, "tailscale", "status", "--json")
+	var lc tailscale.LocalClient
+	st, err := lc.Status(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return ParseStatus([]byte(out))
+	return fromStatus(st), nil
 }

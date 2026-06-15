@@ -5,7 +5,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write   # create the GitHub Release; no id-token (key-based, not keyless)
+  contents: write   # create the GitHub Release
 
 jobs:
   release:
@@ -15,14 +15,13 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-go@v5
         with: { go-version: '1.26' }
-      - uses: sigstore/cosign-installer@v3
 
-      - name: Build + sign (key-based, no transparency log)
+      - name: Build + ssh-sign (no transparency log)
         env:
-          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          SSH_SIGNING_KEY: ${{ secrets.SSH_SIGNING_KEY }}   # passphrase-less signing key whose pubkey is in internal/verify/allowed_signers
         run: |
           set -euo pipefail
+          install -m 600 /dev/stdin /tmp/pldev-sign.key <<< "$SSH_SIGNING_KEY"
           PKG=github.com/peterlodri-sec/pldev/internal/buildinfo
           LD="-X $PKG.Version=$(git describe --tags --always --dirty) \
               -X $PKG.Commit=$(git rev-parse --short HEAD) \
@@ -31,9 +30,9 @@ jobs:
           for t in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
             os=${t%/*}; arch=${t#*/}; out=dist/pldev-$os-$arch
             GOOS=$os GOARCH=$arch go build -ldflags "$LD" -o "$out" .
-            cosign sign-blob --key env://COSIGN_KEY --tlog-upload=false --yes \
-              --output-signature "$out.sig" "$out"
+            ssh-keygen -Y sign -n pldev -f /tmp/pldev-sign.key "$out"
           done
+          rm -f /tmp/pldev-sign.key
 
       - name: Publish release
         env:
@@ -41,4 +40,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "$GITHUB_REF_NAME" \
-            --notes "Key-based signed release (no public log). Verify a downloaded binary with an already-trusted pldev: \`pldev verify <binary>\` (binary #1: bootstrap once with raw cosign + cosign.pub)."
+            --notes "SSH-signed release (no public log). Verify a downloaded binary with an already-trusted pldev: \`pldev verify <binary>\` (binary #1: bootstrap once with raw \`ssh-keygen -Y verify\` + the allowed_signers anchor)."

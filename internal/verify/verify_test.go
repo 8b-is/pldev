@@ -17,17 +17,23 @@ func rep() (*report.Reporter, *bytes.Buffer) {
 	return report.New(&b, "verify"), &b
 }
 
-// stubCosign makes lookPath find cosign and run return the given result.
-func stubCosign(t *testing.T, gotArgs *[]string, runErr error, out string) {
+// stubSSH installs a fake ssh-keygen: find-principals returns principal, verify
+// returns verifyErr. lastArgs captures the final invocation's argv.
+func stubSSH(t *testing.T, principal string, findErr, verifyErr error, lastArgs *[]string) {
 	t.Helper()
 	oldRun, oldLP := run, lookPath
 	t.Cleanup(func() { run, lookPath = oldRun, oldLP })
-	lookPath = func(string) (string, error) { return "/usr/bin/cosign", nil }
-	run = func(_ context.Context, _ string, args ...string) (string, error) {
-		if gotArgs != nil {
-			*gotArgs = args
+	lookPath = func(string) (string, error) { return "/usr/bin/ssh-keygen", nil }
+	run = func(_ context.Context, _ []byte, _ string, args ...string) (string, error) {
+		if lastArgs != nil {
+			*lastArgs = args
 		}
-		return out, runErr
+		for _, a := range args {
+			if a == "find-principals" {
+				return principal + "\n", findErr
+			}
+		}
+		return "Good \"pldev\" signature", verifyErr
 	}
 }
 
@@ -36,62 +42,88 @@ func signedBin(t *testing.T) string {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "pldev")
 	os.WriteFile(bin, []byte("ELF..."), 0o755)
-	os.WriteFile(bin+".sig", []byte("sig"), 0o644)
+	os.WriteFile(bin+".sig", []byte("-----BEGIN SSH SIGNATURE-----\n..."), 0o644)
 	return bin
 }
 
-func TestVerifySuccessArgs(t *testing.T) {
+func TestVerifySuccess(t *testing.T) {
 	var args []string
-	stubCosign(t, &args, nil, "Verified OK")
-	r, _ := rep()
+	stubSSH(t, "peter.lodri@instructure.com", nil, nil, &args)
+	r, b := rep()
 	bin := signedBin(t)
 	if err := Verify(context.Background(), r, bin); err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"verify-blob", "--key", "--signature", bin + ".sig", "--insecure-ignore-tlog", bin} {
+	for _, want := range []string{"-Y", "verify", "-n", "pldev", "-I", "peter.lodri@instructure.com", "-s", bin + ".sig"} {
 		if !strings.Contains(joined, want) {
-			t.Errorf("argv missing %q: %s", want, joined)
+			t.Errorf("verify argv missing %q: %s", want, joined)
 		}
+	}
+	if !strings.Contains(b.String(), "signer=peter.lodri@instructure.com") {
+		t.Errorf("expected signer in log: %q", b.String())
 	}
 }
 
-func TestVerifyUnverifiedFails(t *testing.T) {
-	stubCosign(t, nil, errors.New("exit 1"), "signature mismatch")
+func TestVerifyUntrustedSigner(t *testing.T) {
+	stubSSH(t, "", errors.New("no principals matched"), nil, nil)
 	r, b := rep()
-	if err := Verify(context.Background(), r, signedBin(t)); err == nil {
-		t.Error("tampered/unverified binary must fail")
+	err := Verify(context.Background(), r, signedBin(t))
+	if err == nil || !strings.Contains(err.Error(), "untrusted signer") {
+		t.Errorf("untrusted signer must be rejected, got %v", err)
 	}
 	if !strings.Contains(b.String(), "status=fail") {
 		t.Errorf("expected fail log: %q", b.String())
 	}
 }
 
-func TestVerifyMissingCosign(t *testing.T) {
+func TestVerifyTamperedFails(t *testing.T) {
+	stubSSH(t, "peter.lodri@instructure.com", nil, errors.New("signature verification failed"), nil)
+	r, _ := rep()
+	if err := Verify(context.Background(), r, signedBin(t)); err == nil || !strings.Contains(err.Error(), "unverified") {
+		t.Errorf("bad signature must fail, got %v", err)
+	}
+}
+
+func TestVerifyMissingSSHKeygen(t *testing.T) {
 	oldLP := lookPath
 	t.Cleanup(func() { lookPath = oldLP })
 	lookPath = func(string) (string, error) { return "", errors.New("not found") }
 	r, _ := rep()
-	err := Verify(context.Background(), r, signedBin(t))
-	if err == nil || !strings.Contains(err.Error(), "cosign not found") {
-		t.Errorf("expected actionable cosign-missing error, got %v", err)
+	if err := Verify(context.Background(), r, signedBin(t)); err == nil || !strings.Contains(err.Error(), "ssh-keygen not found") {
+		t.Errorf("missing ssh-keygen should error, got %v", err)
 	}
 }
 
 func TestVerifyMissingSignature(t *testing.T) {
-	stubCosign(t, nil, nil, "")
+	stubSSH(t, "x", nil, nil, nil)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "pldev")
 	os.WriteFile(bin, []byte("x"), 0o755) // no .sig
 	r, _ := rep()
-	err := Verify(context.Background(), r, bin)
-	if err == nil || !strings.Contains(err.Error(), "missing signature") {
-		t.Errorf("expected missing-signature error, got %v", err)
+	if err := Verify(context.Background(), r, bin); err == nil || !strings.Contains(err.Error(), "missing signature") {
+		t.Errorf("missing sig should error, got %v", err)
 	}
 }
 
-func TestEmbeddedPubPresent(t *testing.T) {
-	if len(pubKey) == 0 {
-		t.Error("cosign.pub must be embedded")
+func TestEmbeddedAnchorPresent(t *testing.T) {
+	if len(allowedSigners) == 0 || !strings.Contains(string(allowedSigners), "ssh-ed25519") {
+		t.Error("allowed_signers trust anchor must be embedded")
+	}
+}
+
+func TestAnchorRuntimeOverlay(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// no runtime file → embedded default
+	if string(AnchorBytes()) != string(allowedSigners) {
+		t.Error("absent runtime file should yield the embedded anchor")
+	}
+	// runtime file present → it overrides
+	p := DefaultAnchorPath()
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte("custom@x ssh-ed25519 AAAAruntime\n"), 0o644)
+	if !strings.Contains(string(AnchorBytes()), "custom@x") {
+		t.Error("runtime allowed_signers should override the embedded default")
 	}
 }
