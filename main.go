@@ -203,7 +203,13 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 	}
 	switch sub {
 	case "", "list":
-		fmt.Print(fleet.Render(nodes)) // data → stdout
+		full := false
+		for _, a := range pos {
+			if a == "--full" || a == "--verbose" {
+				full = true
+			}
+		}
+		fmt.Print(fleet.Render(nodes, full))
 	case "health":
 		fleet.Health(ctx, rep, nodes)
 	case "ssh":

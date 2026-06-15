@@ -126,11 +126,16 @@ func dash(s string) string {
 }
 
 // Render returns the fleet as an aligned wide ASCII table (data → stdout):
-// nickname, tailnet host, role, on/off, cpu, cores, mem, arch, caps, ⚠dup.
-func Render(nodes []Node) string {
-	const f = "%-12s %-14s %-8s %-3s %-14s %-3s %-5s %-6s %s\n"
+// nickname, tailnet host, role, on/off, cpu, cores, mem(total/free), arch, then a
+// trailing ⚠dup marker. CAPS is shown only when full is true.
+func Render(nodes []Node, full bool) string {
+	const base = "%-12s %-14s %-8s %-3s %-14s %-3s %-8s %-6s"
 	var b strings.Builder
-	fmt.Fprintf(&b, f, "NICK", "HOST", "ROLE", "ST", "CPU", "CR", "MEM", "ARCH", "CAPS")
+	if full {
+		fmt.Fprintf(&b, base+" %s\n", "NICK", "HOST", "ROLE", "ST", "CPU", "CR", "MEM", "ARCH", "CAPS")
+	} else {
+		fmt.Fprintf(&b, base+"\n", "NICK", "HOST", "ROLE", "ST", "CPU", "CR", "MEM", "ARCH")
+	}
 	for _, n := range nodes {
 		st := "on"
 		if !n.Online {
@@ -142,19 +147,18 @@ func Render(nodes []Node) string {
 		}
 		mem := "-"
 		if n.HW.MemGB > 0 {
-			mem = strconv.Itoa(n.HW.MemGB) + "G"
+			mem = fmt.Sprintf("%dG/%dG", n.HW.MemGB, n.HW.MemFreeGB)
 		}
-		caps := strings.Join(n.Caps, ",")
-		if n.Dup {
-			if caps == "" {
-				caps = "⚠dup"
-			} else {
-				caps += " ⚠dup"
-			}
-		}
-		fmt.Fprintf(&b, f,
+		row := fmt.Sprintf(base,
 			trunc(n.Label(), 12), trunc(n.Name, 14), dash(n.Role), st,
-			trunc(shortCPU(n.HW.CPU), 14), cores, mem, dash(n.HW.Arch), caps)
+			trunc(cpuCode(n.HW.CPU), 14), cores, mem, dash(n.HW.Arch))
+		if full {
+			row += " " + strings.Join(n.Caps, ",")
+		}
+		if n.Dup {
+			row += " ⚠dup"
+		}
+		b.WriteString(strings.TrimRight(row, " ") + "\n")
 	}
 	return b.String()
 }

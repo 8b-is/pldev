@@ -38,6 +38,21 @@ func TestNormArch(t *testing.T) {
 	}
 }
 
+func TestCPUCode(t *testing.T) {
+	cases := map[string]string{
+		"Apple M1 Pro":                               "M1 Pro",
+		"AMD EPYC-Milan Processor":                   "EPYC-Milan",
+		"Intel Core Processor (Haswell, no TSX)":     "Core-Haswell",
+		"Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz": "Xeon E5-2680 v4",
+		"":                                           "",
+	}
+	for in, want := range cases {
+		if got := cpuCode(in); got != want {
+			t.Errorf("cpuCode(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
 func TestShortCPU(t *testing.T) {
 	cases := map[string]string{
 		"Apple M3 Max": "Apple M3 Max",

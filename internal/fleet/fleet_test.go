@@ -85,7 +85,7 @@ func TestLabelFallsBackToName(t *testing.T) {
 }
 
 func TestRender(t *testing.T) {
-	out := Render(Merge(tsNodes(), cfg(), nil))
+	out := Render(Merge(tsNodes(), cfg(), nil), false)
 	for _, want := range []string{"NICK", "HOST", "Katedralis", "dev-cx53"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("render missing %q: %q", want, out)
@@ -183,7 +183,7 @@ func TestRenderWideHardware(t *testing.T) {
 			HW: HWInfo{CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}, Dup: true, DupOf: "Forgemaster"},
 		{Name: "blank", Nickname: "Blank", Online: false},
 	}
-	out := Render(nodes)
+	out := Render(nodes, false)
 	if !strings.Contains(out, "NICK") || !strings.Contains(out, "CPU") || !strings.Contains(out, "ARCH") {
 		t.Fatalf("missing header columns:\n%s", out)
 	}
@@ -193,8 +193,12 @@ func TestRenderWideHardware(t *testing.T) {
 	if !strings.Contains(out, "⚠dup") {
 		t.Fatalf("dup marker absent:\n%s", out)
 	}
-	if strings.Contains(out, "0G") {
-		t.Fatalf("zero mem must render '-', not 0G:\n%s", out)
+	full := Render(nodes, true)
+	if !strings.Contains(full, "CAPS") || !strings.Contains(full, "control") {
+		t.Fatalf("full mode must show CAPS:\n%s", full)
+	}
+	if strings.Contains(out, "control") {
+		t.Fatalf("default (non-full) must NOT show caps:\n%s", out)
 	}
 }
 
