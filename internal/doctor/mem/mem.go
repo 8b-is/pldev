@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/peterlodri-sec/pldev/internal/doctor/fix"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
 	"github.com/peterlodri-sec/pldev/internal/tui"
@@ -70,37 +68,32 @@ func buildFixes(r probe.MemReport) []fix.Fix {
 }
 
 func interactiveFixMenu(ctx context.Context, fixes []fix.Fix) error {
-	items := make([]string, len(fixes))
-	for i, f := range fixes {
+	var applied, skipped, failed int
+	for _, f := range fixes {
 		tag := "SAFE"
 		if !f.Safe() {
 			tag = "DESTRUCTIVE"
 		}
-		items[i] = fmt.Sprintf("[%s] %s — %s", tag, f.Title(), f.Describe())
-	}
-	items = append(items, "Quit")
+		fmt.Printf("\n[%s] %s\n  %s\n", tag, f.Title(), f.Describe())
 
-	m := tui.NewSelect("doctor mem — choose a fix", items)
-	res, err := tea.NewProgram(m).Run()
-	if err != nil {
-		return err
-	}
-	sm := res.(tui.SelectModel)
-	if sm.Aborted || sm.Chosen < 0 || sm.Chosen >= len(fixes) {
-		return nil
-	}
-	chosen := fixes[sm.Chosen]
-	if !chosen.Safe() {
-		if !tui.Confirm(fmt.Sprintf("Confirm DESTRUCTIVE: %s", chosen.Describe())) {
-			fmt.Println("aborted.")
-			return nil
+		prompt := "Apply this fix?"
+		if !f.Safe() {
+			prompt = "Apply this DESTRUCTIVE fix?"
 		}
+		if !tui.Confirm(prompt) {
+			fmt.Println("  skipped.")
+			skipped++
+			continue
+		}
+		out, err := f.Apply(ctx)
+		if err != nil {
+			fmt.Printf("  ERROR: %v\n", err)
+			failed++
+			continue
+		}
+		fmt.Printf("  done: %s\n", out)
+		applied++
 	}
-	out, err := chosen.Apply(ctx)
-	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		return err
-	}
-	fmt.Printf("done: %s\n", out)
+	fmt.Printf("\nSummary: %d applied, %d skipped, %d failed\n", applied, skipped, failed)
 	return nil
 }
