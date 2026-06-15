@@ -122,7 +122,8 @@ func main() {
 				os.Exit(1)
 			}
 			cfg, _ := fleet.LoadFleetConfig(fleet.DefaultFleetConfigPath())
-			nodes := fleet.Merge(ts, cfg)
+			cache, _ := fleet.LoadCache(fleet.DefaultCachePath())
+			nodes := fleet.Merge(ts, cfg, cache)
 			base, err := fed.BusURL(nodes, cfg.Federation.MonitorURL)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "error:", err)
@@ -193,7 +194,8 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 		os.Exit(1)
 	}
 	cfg, _ := fleet.LoadFleetConfig(fleet.DefaultFleetConfigPath())
-	nodes := fleet.Merge(ts, cfg)
+	cache, _ := fleet.LoadCache(fleet.DefaultCachePath())
+	nodes := fleet.Merge(ts, cfg, cache)
 
 	sub := ""
 	if len(pos) >= 2 {
@@ -244,7 +246,7 @@ func runFleet(ctx context.Context, rep *report.Reporter, pos []string, dryRun, y
 		if len(pos) >= 3 {
 			sel = fleet.Select(nodes, pos[2])
 		}
-		fleet.ProbeUsers(ctx, rep, sel, nil)
+		fleet.ProbeUsers(ctx, rep, sel, nil, fleet.DefaultCachePath())
 	case "ssh-config":
 		// generate ~/.ssh/config Host aliases (nickname + tailnet name) from the fleet
 		block := fleet.GenSSHConfig(nodes)
