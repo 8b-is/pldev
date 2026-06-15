@@ -18,18 +18,20 @@ type Options struct {
 	List   bool
 }
 
-func loadRegistry() Registry {
+func loadRegistry() (Registry, error) {
 	user, err := LoadUserManifest(DefaultManifestPath())
 	if err != nil {
-		fmt.Printf("warning: bad user manifest (%v) — using builtin only\n", err)
-		user = Registry{Tools: map[string]Tool{}, Profiles: map[string]Profile{}}
+		return Registry{}, fmt.Errorf("bad user manifest: %w", err)
 	}
-	return Merge(BuiltinRegistry(), user)
+	return Merge(BuiltinRegistry(), user), nil
 }
 
 // Run executes the setup flow.
 func Run(ctx context.Context, opts Options) error {
-	reg := loadRegistry()
+	reg, err := loadRegistry()
+	if err != nil {
+		return err
+	}
 
 	if opts.List {
 		printList(reg)
@@ -37,7 +39,6 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	var tools []Tool
-	var err error
 	if opts.Tokens == "" {
 		tools, err = interactiveSelect(reg)
 		if err != nil {
