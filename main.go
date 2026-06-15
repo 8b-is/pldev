@@ -99,30 +99,41 @@ func main() {
 		runFleet(ctx, rep.Sub("fleet"), positional, setupDryRun, opts.YesSafe)
 		return
 	}
-	// direct subcommand: pldev fed status (federation observability)
+	// direct subcommand: pldev fed <status|validate>
 	if len(positional) >= 1 && positional[0] == "fed" {
+		frep := rep.Sub("fed")
 		sub := ""
 		if len(positional) >= 2 {
 			sub = positional[1]
 		}
-		if sub != "" && sub != "status" {
-			fmt.Fprintln(os.Stderr, "usage: pldev fed status")
+		switch sub {
+		case "validate":
+			if len(positional) < 3 {
+				fmt.Fprintln(os.Stderr, "usage: pldev fed validate <message-file>")
+				os.Exit(2)
+			}
+			if err := fed.Validate(ctx, frep, positional[2]); err != nil {
+				os.Exit(1)
+			}
+		case "", "status":
+			ts, err := fleet.Discover(ctx)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error: tailscale discovery failed:", err)
+				os.Exit(1)
+			}
+			cfg, _ := fleet.LoadFleetConfig(fleet.DefaultFleetConfigPath())
+			nodes := fleet.Merge(ts, cfg)
+			base, err := fed.BusURL(nodes, cfg.Federation.MonitorURL)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+			if err := fed.Status(ctx, frep, nodes, base); err != nil {
+				os.Exit(1)
+			}
+		default:
+			fmt.Fprintln(os.Stderr, "usage: pldev fed [status | validate <file>]")
 			os.Exit(2)
-		}
-		ts, err := fleet.Discover(ctx)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error: tailscale discovery failed:", err)
-			os.Exit(1)
-		}
-		cfg, _ := fleet.LoadFleetConfig(fleet.DefaultFleetConfigPath())
-		nodes := fleet.Merge(ts, cfg)
-		base, err := fed.BusURL(nodes, cfg.Federation.MonitorURL)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
-		if err := fed.Status(ctx, rep.Sub("fed"), nodes, base); err != nil {
-			os.Exit(1)
 		}
 		return
 	}
