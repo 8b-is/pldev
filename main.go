@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,7 @@ import (
 	"github.com/peterlodri-sec/pldev/internal/arp"
 	"github.com/peterlodri-sec/pldev/internal/fed"
 	"github.com/peterlodri-sec/pldev/internal/fleet"
+	"github.com/peterlodri-sec/pldev/internal/pqkey"
 	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/setup"
 	"github.com/peterlodri-sec/pldev/internal/setup/recipe"
@@ -149,6 +151,58 @@ func main() {
 		}
 		return
 	}
+	// direct subcommand: pldev pq-keygen [-out <dir>]
+	if len(positional) >= 1 && positional[0] == "pq-keygen" {
+		outDir := ""
+		for i := 1; i+1 < len(positional); i++ {
+			if positional[i] == "-out" {
+				outDir = positional[i+1]
+			}
+		}
+		if outDir == "" {
+			home, _ := os.UserHomeDir()
+			outDir = filepath.Join(home, ".config", "pldev", "keys")
+		}
+		if err := os.MkdirAll(outDir, 0o700); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		keyPath := filepath.Join(outDir, "brett-shaw_mldsa.key")
+		pubB64, err := pqkey.WriteKeyPair(keyPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Println("private key:", keyPath)
+		fmt.Println("public key: ", keyPath+".pub")
+		fmt.Println("brett-shaw@pldev mldsa65", pubB64)
+		return
+	}
+	// direct subcommand: pldev pq-sign -key <keyfile> <bin>
+	if len(positional) >= 1 && positional[0] == "pq-sign" {
+		keyFile := ""
+		var binArgs []string
+		rest := positional[1:]
+		for i := 0; i < len(rest); i++ {
+			if rest[i] == "-key" && i+1 < len(rest) {
+				keyFile = rest[i+1]
+				i++
+			} else {
+				binArgs = append(binArgs, rest[i])
+			}
+		}
+		if keyFile == "" || len(binArgs) == 0 {
+			fmt.Fprintln(os.Stderr, "usage: pldev pq-sign -key <keyfile> <bin>")
+			os.Exit(2)
+		}
+		bin := binArgs[0]
+		if err := pqkey.SignFile(keyFile, bin); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Println("pq-signed:", bin+".sig.mldsa")
+		return
+	}
 	// direct subcommand: pldev setup <recipe> (composite flows like ruflo)
 	if len(positional) >= 2 && positional[0] == "setup" {
 		if r, ok := recipe.Named(positional[1]); ok {
@@ -183,7 +237,7 @@ func main() {
 		rootMenu(ctx, opts, rep)
 		return
 	}
-	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps | setup | version] [--report] [--yes] [--no-color] [--dry-run] [--list] [--version]")
+	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps | setup | version | pq-keygen | pq-sign] [--report] [--yes] [--no-color] [--dry-run] [--list] [--version]")
 	os.Exit(2)
 }
 
