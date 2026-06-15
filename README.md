@@ -20,6 +20,17 @@ Single-entrypoint personal machine helper. Modules: `doctor mem`, `ps`, `setup`.
 
 Flags: --report, --yes (safe fixes only), --no-color, --version.
 
+## Releasing
+
+Build, dual-sign (ed25519 + ML-DSA-65), and verify locally on the M3:
+
+    pldev release v0.0.2            # dry-run: artifacts + sigs in dist/, prints notes
+    pldev release v0.0.2 --publish  # triple-ack gate, then GitHub upload
+
+Publish requires a token (`gh auth login` or `GH_TOKEN`) and the signing keys
+(`~/.ssh/id_pldev_ci`, `~/.config/pldev/keys/brett-shaw_pldev_mldsa.key`).
+Verify any artifact with `pldev verify <file>`.
+
 ## Action log
 
 Every command emits a one-action-per-line log to **stderr** (data output stays on

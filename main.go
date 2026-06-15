@@ -16,6 +16,7 @@ import (
 	"github.com/peterlodri-sec/pldev/internal/fed"
 	"github.com/peterlodri-sec/pldev/internal/fleet"
 	"github.com/peterlodri-sec/pldev/internal/pqkey"
+	"github.com/peterlodri-sec/pldev/internal/release"
 	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/setup"
 	"github.com/peterlodri-sec/pldev/internal/setup/recipe"
@@ -137,6 +138,30 @@ func main() {
 		default:
 			fmt.Fprintln(os.Stderr, "usage: pldev fed [status | validate <file>]")
 			os.Exit(2)
+		}
+		return
+	}
+	// direct subcommand: pldev release <tag> [--publish] [--notes-file F]
+	if len(positional) >= 1 && positional[0] == "release" {
+		rrep := rep.Sub("release")
+		if len(positional) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: pldev release <tag> [--publish] [--notes-file <file>]")
+			os.Exit(2)
+		}
+		o := release.Options{Tag: positional[1]}
+		for i := 2; i < len(positional); i++ {
+			switch positional[i] {
+			case "--publish":
+				o.Publish = true
+			case "--notes-file":
+				if i+1 < len(positional) {
+					o.NotesFile = positional[i+1]
+					i++
+				}
+			}
+		}
+		if err := release.Run(ctx, rrep, o); err != nil {
+			os.Exit(1)
 		}
 		return
 	}

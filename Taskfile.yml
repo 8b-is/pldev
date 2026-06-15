@@ -56,3 +56,11 @@ tasks:
     cmds:
       - go run . pq-sign -key {{.KEY}} "{{.BIN}}"
       - 'echo "pq-signed: {{.BIN}}.sig.mldsa"'
+
+  release:
+    desc: 'Build+sign+verify a release (dry-run). Publish: task release TAG=v0.0.2 PUBLISH=--publish'
+    requires: { vars: [TAG] }
+    vars:
+      PUBLISH: '{{.PUBLISH | default ""}}'
+    cmds:
+      - go run . release {{.TAG}} {{.PUBLISH}}
