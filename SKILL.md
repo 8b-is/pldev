@@ -1,11 +1,11 @@
 ---
 name: pldev
-description: Use pldev to diagnose and fix machine memory/swap/disk problems. Triggers on "check my memory", "what's eating my RAM", "diagnose this machine", "free up space", "pldev".
+description: Use pldev to diagnose and fix machine memory/swap/disk problems, or show a neofetch-style system overview. Triggers on "check my memory", "what's eating my RAM", "diagnose this machine", "free up space", "system info", "pldev ps", "pldev".
 ---
 
 # pldev
 
-`pldev` is a cross-platform (macOS/Linux) machine doctor. v1 module: `doctor mem`.
+`pldev` is a cross-platform (macOS/Linux) machine doctor. Modules: `doctor mem`, `ps`.
 
 ## Run
 
@@ -13,6 +13,9 @@ description: Use pldev to diagnose and fix machine memory/swap/disk problems. Tr
   arrow-key menu of fixes.
 - Non-interactive (capture/ssh): `pldev doctor mem --report` — prints the report
   only, no prompts. Use this when reading output programmatically.
+- `pldev ps` — neofetch-style system overview panel (host/OS/kernel/model/arch/
+  uptime, CPU & memory, disks, network interfaces). Always non-interactive; prints
+  and exits. Honors `--no-color`.
 - `--yes` applies SAFE fixes automatically (never destructive).
 - `--no-color` for pipes/CI.
 

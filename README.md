@@ -1,6 +1,6 @@
 # pldev
 
-Single-entrypoint personal machine helper. v1: `doctor mem`.
+Single-entrypoint personal machine helper. Modules: `doctor mem`, `ps`.
 
 ## Build
     task build      # -> ./pldev
@@ -11,5 +11,6 @@ Single-entrypoint personal machine helper. v1: `doctor mem`.
     pldev                 # interactive root menu
     pldev doctor mem      # memory doctor (report + guided fixes)
     pldev doctor mem --report   # non-interactive dump (ssh/scripts)
+    pldev ps              # neofetch-style system overview panel
 
 Flags: --report, --yes (safe fixes only), --no-color.
