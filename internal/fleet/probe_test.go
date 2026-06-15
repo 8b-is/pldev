@@ -2,7 +2,11 @@ package fleet
 
 import (
 	"context"
+	"io"
+	"path/filepath"
 	"testing"
+
+	"github.com/peterlodri-sec/pldev/internal/report"
 )
 
 func stubTry(t *testing.T, ok func(user, ip string) bool) {
@@ -46,5 +50,28 @@ func TestProbeNodeNoDuplicateTries(t *testing.T) {
 	probeNode(context.Background(), Node{IP: "100.0.0.1", SSHUser: "root"}, []string{"root", "root", "dev"})
 	if n != 2 { // root, dev — not root three times
 		t.Errorf("expected 2 distinct tries, got %d", n)
+	}
+}
+
+func TestProbeUsersWritesCache(t *testing.T) {
+	origTry, origGather := trySSHUser, gatherHW
+	defer func() { trySSHUser, gatherHW = origTry, origGather }()
+	trySSHUser = func(ctx context.Context, user, ip string) bool { return user == "root" }
+	gatherHW = func(ctx context.Context, user, ip string) (HWInfo, error) {
+		return HWInfo{Serial: "S1", CPU: "Apple M3 Max", Cores: 16, MemGB: 64, Arch: "arm64"}, nil
+	}
+
+	path := filepath.Join(t.TempDir(), "cache.json")
+	rep := report.New(io.Discard, "fleet")
+	nodes := []Node{{Name: "n1", IP: "100.0.0.1", Online: true}}
+	ProbeUsers(context.Background(), rep, nodes, nil, path)
+
+	cache, err := LoadCache(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cache["n1"]
+	if got.SSHUser != "root" || got.HW.Serial != "S1" || got.HW.Cores != 16 {
+		t.Fatalf("cache not written correctly: %+v", got)
 	}
 }
