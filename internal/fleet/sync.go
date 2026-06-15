@@ -57,12 +57,12 @@ func SyncSigners(ctx context.Context, rep *report.Reporter, machines []Machine, 
 	}
 
 	// local first: promote embedded -> runtime file
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err == nil {
-		if err := os.WriteFile(localPath, anchor, 0o644); err == nil {
-			rep.OK("sync-signers", "local")
-		} else {
-			rep.Fail("sync-signers", "local", err)
-		}
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		rep.Fail("sync-signers", "local", err)
+	} else if err := os.WriteFile(localPath, anchor, 0o644); err != nil {
+		rep.Fail("sync-signers", "local", err)
+	} else {
+		rep.OK("sync-signers", "local")
 	}
 
 	tmp, err := os.CreateTemp("", "pldev-signers-*")
