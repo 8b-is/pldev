@@ -1,0 +1,17 @@
+version: '3'
+tasks:
+  build:
+    cmds: ['go build -o pldev .']
+  install:
+    cmds: ['go build -o "{{.HOME}}/.local/bin/pldev" .']
+    env: { HOME: '{{.HOME}}' }
+  test:
+    cmds: ['go test ./...']
+  lint:
+    cmds: ['go vet ./...']
+  cross:
+    cmds:
+      - GOOS=darwin GOARCH=arm64 go build -o dist/pldev-darwin-arm64 .
+      - GOOS=darwin GOARCH=amd64 go build -o dist/pldev-darwin-amd64 .
+      - GOOS=linux  GOARCH=arm64 go build -o dist/pldev-linux-arm64 .
+      - GOOS=linux  GOARCH=amd64 go build -o dist/pldev-linux-amd64 .
