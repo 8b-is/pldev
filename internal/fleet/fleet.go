@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Node is a discovered node enriched with config annotations.
+// Node is a discovered node enriched with config annotations + cached hardware.
 type Node struct {
 	Name     string
 	Nickname string
@@ -19,6 +19,9 @@ type Node struct {
 	Caps     []string
 	SSHUser  string
 	Excluded bool
+	HW       HWInfo
+	Dup      bool   // shares a serial with an earlier node
+	DupOf    string // label of that earlier node
 }
 
 // Label is the display identity: the nickname when set, else the tailnet name.
@@ -29,9 +32,9 @@ func (n Node) Label() string {
 	return n.Name
 }
 
-// Merge annotates tailscale nodes with config, drops excluded nodes, and fills
-// ssh_user from the per-node value, then the default, then $USER.
-func Merge(ts []TSNode, cfg FleetConfig) []Node {
+// Merge annotates tailscale nodes with config + cached hardware, drops excluded
+// nodes, fills ssh_user (per-node → default → $USER), then flags serial dups.
+func Merge(ts []TSNode, cfg FleetConfig, cache FleetCache) []Node {
 	def := cfg.DefaultSSHUser
 	if def == "" {
 		def = os.Getenv("USER")
@@ -48,11 +51,31 @@ func Merge(ts []TSNode, cfg FleetConfig) []Node {
 		}
 		out = append(out, Node{
 			Name: t.Name, Nickname: nc.Nickname, IP: t.IP, OS: t.OS, Online: t.Online, Tags: t.Tags,
-			Role: nc.Role, Caps: nc.Caps, SSHUser: user,
+			Role: nc.Role, Caps: nc.Caps, SSHUser: user, HW: cache[t.Name].HW,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Label() < out[j].Label() })
+	detectDups(out)
 	return out
+}
+
+// detectDups marks every node that shares a non-empty Serial with an earlier
+// (sorted-order) node. The first keeps Dup=false; later ones get Dup=true and
+// DupOf set to the first node's label. Empty serials never match.
+func detectDups(nodes []Node) {
+	firstBySerial := map[string]string{}
+	for i := range nodes {
+		s := nodes[i].HW.Serial
+		if s == "" {
+			continue
+		}
+		if first, ok := firstBySerial[s]; ok {
+			nodes[i].Dup = true
+			nodes[i].DupOf = first
+		} else {
+			firstBySerial[s] = nodes[i].Label()
+		}
+	}
 }
 
 // Select resolves a selector against the fleet:
