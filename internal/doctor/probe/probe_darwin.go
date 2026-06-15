@@ -27,8 +27,9 @@ func (darwinCollector) Mem(ctx context.Context) (MemStat, error) {
 	if err != nil {
 		return MemStat{Total: total}, err
 	}
-	free := parseVMStatFree(vmstat) // page-based free+inactive
-	return MemStat{Total: total, Free: free, Used: total - free}, nil
+	free := parseVMStatFree(vmstat)           // page-based free+inactive
+	avail := parseVMStatAvailable(vmstat)     // free+inactive+speculative
+	return MemStat{Total: total, Free: free, Available: avail, Used: total - free}, nil
 }
 
 func (darwinCollector) Swap(ctx context.Context) (SwapStat, error) {
@@ -125,6 +126,29 @@ func parseVMStatFree(s string) uint64 {
 		}
 	}
 	return (free + inactive) * pageSize
+}
+
+func parseVMStatAvailable(s string) uint64 {
+	pageSize := uint64(16384)
+	var free, inactive, speculative uint64
+	for _, line := range strings.Split(s, "\n") {
+		switch {
+		case strings.Contains(line, "page size of"):
+			f := strings.FieldsFunc(line, func(r rune) bool { return r < '0' || r > '9' })
+			if len(f) > 0 {
+				if v, err := strconv.ParseUint(f[len(f)-1], 10, 64); err == nil {
+					pageSize = v
+				}
+			}
+		case strings.HasPrefix(line, "Pages free:"):
+			free = pagesIn(line)
+		case strings.HasPrefix(line, "Pages inactive:"):
+			inactive = pagesIn(line)
+		case strings.HasPrefix(line, "Pages speculative:"):
+			speculative = pagesIn(line)
+		}
+	}
+	return (free + inactive + speculative) * pageSize
 }
 
 func pagesIn(line string) uint64 {

@@ -28,7 +28,7 @@ func parseMeminfo(s string) (MemStat, error) {
 		return MemStat{}, fmt.Errorf("no MemTotal")
 	}
 	avail := vals["MemAvailable"]
-	return MemStat{Total: total, Free: vals["MemFree"], Used: total - avail}, nil
+	return MemStat{Total: total, Free: vals["MemFree"], Available: avail, Used: total - avail}, nil
 }
 
 // parseSwapusage reads `sysctl vm.swapusage` output (macOS), values like 44032.00M.

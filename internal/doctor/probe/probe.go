@@ -27,7 +27,7 @@ func (s Severity) String() string {
 	}
 }
 
-type MemStat struct{ Total, Used, Free uint64 } // bytes
+type MemStat struct{ Total, Used, Free, Available uint64 } // bytes
 type SwapStat struct{ Total, Used uint64 }      // bytes
 type Proc struct {
 	PID  int
