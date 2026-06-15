@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/peterlodri-sec/pldev/internal/doctor/mem"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
+	"github.com/peterlodri-sec/pldev/internal/setup"
 	"github.com/peterlodri-sec/pldev/internal/sysinfo"
 	"github.com/peterlodri-sec/pldev/internal/tui"
 )
@@ -16,6 +18,7 @@ import (
 func main() {
 	args := os.Args[1:]
 	opts := mem.Options{}
+	var setupDryRun, setupList bool
 	var positional []string
 	for _, a := range args {
 		switch a {
@@ -25,6 +28,10 @@ func main() {
 			opts.YesSafe = true
 		case "--no-color":
 			os.Setenv("NO_COLOR", "1")
+		case "--dry-run":
+			setupDryRun = true
+		case "--list":
+			setupList = true
 		default:
 			positional = append(positional, a)
 		}
@@ -42,11 +49,26 @@ func main() {
 		runPS(ctx)
 		return
 	}
+	// direct subcommand: pldev setup
+	if len(positional) >= 1 && positional[0] == "setup" {
+		toks := strings.Join(positional[1:], "+")
+		err := setup.Run(ctx, setup.Options{
+			Tokens: toks,
+			DryRun: setupDryRun,
+			Yes:    opts.YesSafe,
+			List:   setupList,
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(positional) == 0 {
 		rootMenu(ctx, opts)
 		return
 	}
-	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps] [--report] [--yes] [--no-color]")
+	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps | setup] [--report] [--yes] [--no-color] [--dry-run] [--list]")
 	os.Exit(2)
 }
 
@@ -64,7 +86,7 @@ func runMem(ctx context.Context, opts mem.Options) {
 }
 
 func rootMenu(ctx context.Context, opts mem.Options) {
-	m := tui.NewSelect("pldev", []string{"doctor mem", "system info (ps)", "Quit"})
+	m := tui.NewSelect("pldev", []string{"doctor mem", "system info (ps)", "setup", "Quit"})
 	res, err := tea.NewProgram(m).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -76,5 +98,10 @@ func rootMenu(ctx context.Context, opts mem.Options) {
 		runMem(ctx, opts)
 	case 1:
 		runPS(ctx)
+	case 2:
+		if err := setup.Run(ctx, setup.Options{}); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	}
 }

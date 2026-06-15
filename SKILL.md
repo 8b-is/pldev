@@ -37,3 +37,14 @@ Severity tags: `OK` / `WARN` / `CRIT`.
 
 pldev never runs `sudo` or captures passwords. If a fix needs root, it prints the
 exact command for the human to run.
+
+## setup
+
+`pldev setup` installs dev tooling from a curated registry (+ ~/.config/pldev/setup.toml overrides).
+
+- `pldev setup` — interactive multiselect (profiles + tools).
+- `pldev setup ghostty+zsh+bun` — install named tools.
+- `pldev setup @dev` — install a profile (minimal/dev/server/work).
+- `--dry-run` plan only · `--yes` skip confirm · `--list` show registry · `--no-color`.
+
+Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — sudo prompts you directly; pldev never sees the password. No uninstall in v1.
