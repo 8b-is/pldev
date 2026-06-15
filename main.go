@@ -11,8 +11,10 @@ import (
 	"github.com/peterlodri-sec/pldev/internal/buildinfo"
 	"github.com/peterlodri-sec/pldev/internal/doctor/mem"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
+	"github.com/peterlodri-sec/pldev/internal/arp"
 	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/setup"
+	"github.com/peterlodri-sec/pldev/internal/setup/recipe"
 	"github.com/peterlodri-sec/pldev/internal/sysinfo"
 	"github.com/peterlodri-sec/pldev/internal/tui"
 )
@@ -64,7 +66,47 @@ func main() {
 		runPS(ctx)
 		return
 	}
-	// direct subcommand: pldev setup
+	// direct subcommand: pldev arp <sync|verify>
+	if len(positional) >= 1 && positional[0] == "arp" {
+		arep := rep.Sub("arp")
+		clone := arp.DefaultClonePath()
+		var err error
+		switch {
+		case len(positional) >= 2 && positional[1] == "sync":
+			err = arp.Sync(ctx, arep, clone)
+		case len(positional) >= 2 && positional[1] == "verify":
+			var out string
+			out, err = arp.Verify(ctx, clone)
+			if err == nil {
+				arep.OK("arp-verify", clone)
+			} else {
+				arep.Fail("arp-verify", clone, err, report.KV{K: "out", V: strings.TrimSpace(out)})
+			}
+		default:
+			fmt.Fprintln(os.Stderr, "usage: pldev arp [sync | verify]")
+			os.Exit(2)
+		}
+		if err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+	// direct subcommand: pldev setup <recipe> (composite flows like ruflo)
+	if len(positional) >= 2 && positional[0] == "setup" {
+		if r, ok := recipe.Named(positional[1]); ok {
+			err := recipe.Run(ctx, r, recipe.Options{
+				DryRun: setupDryRun,
+				Yes:    opts.YesSafe,
+				Rep:    rep.Sub("setup"),
+			})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+	// direct subcommand: pldev setup (package install)
 	if len(positional) >= 1 && positional[0] == "setup" {
 		toks := strings.Join(positional[1:], "+")
 		err := setup.Run(ctx, setup.Options{

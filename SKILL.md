@@ -49,6 +49,10 @@ exact command for the human to run.
 
 Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — sudo prompts you directly; pldev never sees the password. No uninstall in v1.
 
+### setup recipes (composite flows)
+
+`pldev setup <recipe>` runs an ordered, idempotent, dry-run-aware recipe (engine in `internal/setup/recipe`). `pldev setup ruflo` installs ruflo + wires two memory MCPs globally — **honcho** (relational/peer memory, remote on dev-cx53) and **mempalace** (file/corpus recall, local pgvector) — provisions the honcho stack via `nixos-rebuild` (auth-gated, biometric), sets `CLI_CORE`/langfuse env (secrets via `$(bao kv get …)` shell indirection, never on disk), and drops a memory-lane directive in `~/.claude/CLAUDE.md`. Config defaults in `~/.config/pldev/recipes.toml` (canonical copy on M1). `--dry-run` previews every step; secret-bearing steps never log values.
+
 ## Action log & version
 
 - `pldev --version` (or `pldev version`) prints embedded build info: `pldev <ver> (<sha>, <commit-date>, go1.x)`.

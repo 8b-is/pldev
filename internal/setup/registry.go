@@ -67,6 +67,7 @@ func BuiltinRegistry() Registry {
 		"tailscale": {Desc: "mesh VPN", Category: "net", Darwin: d(cask("tailscale")), Linux: d(apt("tailscale"))},
 		"docker":    {Desc: "containers", Category: "containers", Darwin: d(cask("docker")), Linux: d(apt("docker.io"))},
 		"bun":       {Desc: "JS runtime", Category: "cli", Darwin: d(mise("bun")), Linux: d(mise("bun"))},
+		"uv":        {Desc: "Python pkg/runtime mgr", Category: "cli", Darwin: d(brew("uv")), Linux: d(mise("uv"))},
 		"node":      {Desc: "Node.js", Category: "cli", Darwin: d(mise("node")), Linux: d(mise("node"))},
 		"go":        {Desc: "Go toolchain", Category: "cli", Darwin: d(mise("go")), Linux: d(mise("go"))},
 		"mold":      {Desc: "fast linker", Category: "build", Darwin: d(brew("mold")), Linux: d(apt("mold"))},
