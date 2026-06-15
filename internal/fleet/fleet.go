@@ -21,6 +21,7 @@ type Node struct {
 	SSHUser  string
 	Excluded bool
 	HW       HWInfo
+	Primary  bool
 	Dup      bool   // shares a serial with an earlier node
 	DupOf    string // label of that earlier node
 }
@@ -52,7 +53,7 @@ func Merge(ts []TSNode, cfg FleetConfig, cache FleetCache) []Node {
 		}
 		out = append(out, Node{
 			Name: t.Name, Nickname: nc.Nickname, IP: t.IP, OS: t.OS, Online: t.Online, Tags: t.Tags,
-			Role: nc.Role, Caps: nc.Caps, SSHUser: user, HW: cache[t.Name].HW,
+			Role: nc.Role, Caps: nc.Caps, SSHUser: user, Primary: nc.Primary, HW: cache[t.Name].HW,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Label() < out[j].Label() })
@@ -79,11 +80,11 @@ func detectDups(nodes []Node) {
 	}
 }
 
-// Select resolves a selector against the fleet:
+// SelectNodes resolves a selector against the node fleet (kept for probe-user):
 //   - "all"        → every node
 //   - "@<role>"    → nodes whose role matches
-//   - "<name>"     → the single node by name
-func Select(nodes []Node, selector string) []Node {
+//   - "<name>"     → the single node by name or nickname (case-insensitive)
+func SelectNodes(nodes []Node, selector string) []Node {
 	switch {
 	case selector == "all" || selector == "@all":
 		return nodes
@@ -101,6 +102,36 @@ func Select(nodes []Node, selector string) []Node {
 		for _, n := range nodes {
 			if n.Name == selector || strings.EqualFold(n.Nickname, selector) {
 				return []Node{n}
+			}
+		}
+		return nil
+	}
+}
+
+// Select resolves a selector against machines:
+//   - "all"/"@all" → every machine
+//   - "@<role>"    → machines whose canonical role matches
+//   - "<name>"     → the machine containing a node matching name or nickname
+//     (case-insensitive), including a non-canonical alias name.
+func Select(machines []Machine, selector string) []Machine {
+	switch {
+	case selector == "all" || selector == "@all":
+		return machines
+	case strings.HasPrefix(selector, "@"):
+		role := selector[1:]
+		var out []Machine
+		for _, m := range machines {
+			if m.Canonical().Role == role {
+				out = append(out, m)
+			}
+		}
+		return out
+	default:
+		for _, m := range machines {
+			for _, n := range m.Nodes {
+				if n.Name == selector || strings.EqualFold(n.Nickname, selector) {
+					return []Machine{m}
+				}
 			}
 		}
 		return nil
@@ -125,10 +156,11 @@ func dash(s string) string {
 	return s
 }
 
-// Render returns the fleet as an aligned wide ASCII table (data → stdout):
-// nickname, tailnet host, role, on/off, cpu, cores, mem(total/free), arch, then a
-// trailing ⚠dup marker. CAPS is shown only when full is true.
-func Render(nodes []Node, full bool) string {
+// Render returns the fleet as an aligned wide ASCII table (data → stdout), one
+// row per physical machine (its canonical alias). A machine with extra tailnet
+// registrations shows a trailing "+N alias"; --full adds CAPS and indented alias
+// lines.
+func Render(machines []Machine, full bool) string {
 	const base = "%-12s %-14s %-8s %-3s %-14s %-3s %-8s %-6s"
 	var b strings.Builder
 	if full {
@@ -136,7 +168,8 @@ func Render(nodes []Node, full bool) string {
 	} else {
 		fmt.Fprintf(&b, base+"\n", "NICK", "HOST", "ROLE", "ST", "CPU", "CR", "MEM", "ARCH")
 	}
-	for _, n := range nodes {
+	for _, m := range machines {
+		n := m.Canonical()
 		st := "on"
 		if !n.Online {
 			st = "off"
@@ -155,10 +188,19 @@ func Render(nodes []Node, full bool) string {
 		if full {
 			row += " " + strings.Join(n.Caps, ",")
 		}
-		if n.Dup {
-			row += " ⚠dup"
+		if al := m.Aliases(); len(al) > 0 {
+			row += fmt.Sprintf(" +%d alias", len(al))
 		}
 		b.WriteString(strings.TrimRight(row, " ") + "\n")
+		if full {
+			for _, a := range m.Aliases() {
+				ast := "on"
+				if !a.Online {
+					ast = "off"
+				}
+				fmt.Fprintf(&b, "    alias %-20s %-16s %s\n", a.Name, a.IP, ast)
+			}
+		}
 	}
 	return b.String()
 }

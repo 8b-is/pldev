@@ -13,6 +13,7 @@ type NodeConfig struct {
 	Role     string   `toml:"role"`
 	Caps     []string `toml:"caps"`
 	SSHUser  string   `toml:"ssh_user"`
+	Primary  bool     `toml:"primary"` // tie-breaker: canonical alias when a machine has multiple online registrations
 	Exclude  bool     `toml:"exclude"`
 }
 
