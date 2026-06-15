@@ -16,7 +16,8 @@ var DefaultUserCandidates = []string{"root", "lodripeter", "ubuntu", "admin", "d
 // trySSHUser reports whether <user>@<ip> accepts a key-auth ssh command.
 // Indirection point for tests.
 var trySSHUser = func(ctx context.Context, user, ip string) bool {
-	_, err := sys.Run(ctx, "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6", user+"@"+ip, "true")
+	args := append(append([]string{}, sshOpts...), user+"@"+ip, "true")
+	_, err := sys.Run(ctx, "ssh", args...)
 	return err == nil
 }
 
