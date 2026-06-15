@@ -2,6 +2,7 @@ package verify
 
 import (
 	"bytes"
+	"encoding/base64"
 	"testing"
 )
 
@@ -54,5 +55,25 @@ func TestPQKeysAreDistinct(t *testing.T) {
 	_, p2, _ := GenPQKeyPair()
 	if bytes.Equal(p1, p2) {
 		t.Fatal("two generated keys must differ")
+	}
+}
+
+func TestVerifyPQAnchorMatch(t *testing.T) {
+	pub, priv, _ := GenPQKeyPair()
+	anchor := []byte("# comment\n\nbrett-shaw@pldev mldsa65 " + base64.StdEncoding.EncodeToString(pub) + "\n")
+	msg := []byte("release binary bytes")
+	sig, _ := SignPQ(priv, msg)
+
+	id, ok := verifyPQ(anchor, msg, sig)
+	if !ok || id != "brett-shaw@pldev" {
+		t.Fatalf("trusted key should match: id=%q ok=%v", id, ok)
+	}
+	otherPub, _, _ := GenPQKeyPair()
+	anchor2 := []byte("ci@other mldsa65 " + base64.StdEncoding.EncodeToString(otherPub) + "\n")
+	if _, ok := verifyPQ(anchor2, msg, sig); ok {
+		t.Fatal("signature from untrusted key must not match")
+	}
+	if _, ok := verifyPQ(anchor, []byte("tampered"), sig); ok {
+		t.Fatal("tampered message must not match")
 	}
 }

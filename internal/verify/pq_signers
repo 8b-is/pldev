@@ -1,0 +1,2 @@
+# pldev PQ trust anchor — ML-DSA-65 public keys. Format: <principal> mldsa65 <base64-pubkey>
+# Real signing identities (e.g. brett-shaw@pldev) are appended during release setup.
