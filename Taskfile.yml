@@ -34,3 +34,16 @@ tasks:
       - GOOS=darwin GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o dist/pldev-darwin-amd64 .
       - GOOS=linux  GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o dist/pldev-linux-arm64 .
       - GOOS=linux  GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o dist/pldev-linux-amd64 .
+
+  keygen:
+    desc: One-time cosign key pair. Store the password in Vaultwarden; commit internal/verify/cosign.pub.
+    cmds:
+      - cosign generate-key-pair
+      - 'echo "Now: store the password in Vaultwarden, and replace internal/verify/cosign.pub with cosign.pub"'
+
+  sign:
+    desc: 'Locally sign a binary (key-based, no transparency log). Usage: task sign BIN=dist/pldev-darwin-arm64'
+    requires: { vars: [BIN] }
+    cmds:
+      # Password from Vaultwarden via bw; never written to disk or logs.
+      - COSIGN_PASSWORD="$(bw get password cosign-pldev)" cosign sign-blob --key cosign.key --tlog-upload=false --yes --output-signature "{{.BIN}}.sig" "{{.BIN}}"
