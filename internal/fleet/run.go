@@ -31,7 +31,7 @@ func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
 
 	for _, n := range nodes {
 		if !n.Online {
-			rep.Skip("health", n.Name, "offline")
+			rep.Skip("health", n.Label(), "offline")
 			down++
 			continue
 		}
@@ -44,11 +44,11 @@ func Health(ctx context.Context, rep *report.Reporter, nodes []Node) {
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				rep.Fail("health", n.Name, err)
+				rep.Fail("health", n.Label(), err)
 				unreach++
 				return
 			}
-			rep.OK("health", n.Name)
+			rep.OK("health", n.Label())
 			ok++
 		}(n)
 	}
@@ -73,7 +73,7 @@ func Run(ctx context.Context, rep *report.Reporter, nodes []Node, cmd []string, 
 	if dryRun {
 		rep.SetDryRun(true) // so Do emits status=dry
 		for _, n := range nodes {
-			rep.Do("run", n.Name)
+			rep.Do("run", n.Label())
 		}
 		fmt.Printf("would run on %d node(s): %s\n", len(nodes), cmdStr)
 		return nil
@@ -94,7 +94,7 @@ func Run(ctx context.Context, rep *report.Reporter, nodes []Node, cmd []string, 
 
 	for _, n := range nodes {
 		if !n.Online {
-			rep.Skip("run", n.Name, "offline")
+			rep.Skip("run", n.Label(), "offline")
 			continue
 		}
 		wg.Add(1)
@@ -105,13 +105,13 @@ func Run(ctx context.Context, rep *report.Reporter, nodes []Node, cmd []string, 
 			out, err := sys.Run(ctx, "ssh", append(sshBase(n), cmd...)...)
 			mu.Lock()
 			defer mu.Unlock()
-			fmt.Printf("=== %s ===\n%s\n", n.Name, strings.TrimRight(out, "\n"))
+			fmt.Printf("=== %s ===\n%s\n", n.Label(), strings.TrimRight(out, "\n"))
 			if err != nil {
-				rep.Fail("run", n.Name, err)
+				rep.Fail("run", n.Label(), err)
 				failed++
 				return
 			}
-			rep.OK("run", n.Name)
+			rep.OK("run", n.Label())
 			ok++
 		}(n)
 	}

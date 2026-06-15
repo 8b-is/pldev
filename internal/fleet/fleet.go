@@ -10,6 +10,7 @@ import (
 // Node is a discovered node enriched with config annotations.
 type Node struct {
 	Name     string
+	Nickname string
 	IP       string
 	OS       string
 	Online   bool
@@ -18,6 +19,14 @@ type Node struct {
 	Caps     []string
 	SSHUser  string
 	Excluded bool
+}
+
+// Label is the display identity: the nickname when set, else the tailnet name.
+func (n Node) Label() string {
+	if n.Nickname != "" {
+		return n.Nickname
+	}
+	return n.Name
 }
 
 // Merge annotates tailscale nodes with config, drops excluded nodes, and fills
@@ -38,11 +47,11 @@ func Merge(ts []TSNode, cfg FleetConfig) []Node {
 			user = def
 		}
 		out = append(out, Node{
-			Name: t.Name, IP: t.IP, OS: t.OS, Online: t.Online, Tags: t.Tags,
+			Name: t.Name, Nickname: nc.Nickname, IP: t.IP, OS: t.OS, Online: t.Online, Tags: t.Tags,
 			Role: nc.Role, Caps: nc.Caps, SSHUser: user,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool { return out[i].Label() < out[j].Label() })
 	return out
 }
 
@@ -64,8 +73,9 @@ func Select(nodes []Node, selector string) []Node {
 		}
 		return out
 	default:
+		// match the tailnet name or the nickname (case-insensitive)
 		for _, n := range nodes {
-			if n.Name == selector {
+			if n.Name == selector || strings.EqualFold(n.Nickname, selector) {
 				return []Node{n}
 			}
 		}
@@ -73,10 +83,11 @@ func Select(nodes []Node, selector string) []Node {
 	}
 }
 
-// Render returns the fleet as an aligned ASCII table (data → stdout).
+// Render returns the fleet as an aligned ASCII table (data → stdout). The
+// nickname is the primary identity; HOST carries the tailnet name for ssh.
 func Render(nodes []Node) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-22s %-10s %-7s %-8s %s\n", "NODE", "ROLE", "OS", "STATUS", "CAPS")
+	fmt.Fprintf(&b, "%-18s %-22s %-10s %-7s %-8s %s\n", "NICK", "HOST", "ROLE", "OS", "STATUS", "CAPS")
 	for _, n := range nodes {
 		status := "online"
 		if !n.Online {
@@ -86,8 +97,8 @@ func Render(nodes []Node) string {
 		if role == "" {
 			role = "-"
 		}
-		fmt.Fprintf(&b, "%-22s %-10s %-7s %-8s %s\n",
-			n.Name, role, n.OS, status, strings.Join(n.Caps, ","))
+		fmt.Fprintf(&b, "%-18s %-22s %-10s %-7s %-8s %s\n",
+			n.Label(), n.Name, role, n.OS, status, strings.Join(n.Caps, ","))
 	}
 	return b.String()
 }

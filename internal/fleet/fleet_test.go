@@ -20,7 +20,7 @@ func cfg() FleetConfig {
 	return FleetConfig{
 		DefaultSSHUser: "lodripeter",
 		Node: map[string]NodeConfig{
-			"dev-cx53":    {Role: "hetzner", Caps: []string{"docker", "ollama"}, SSHUser: "dev"},
+			"dev-cx53":    {Nickname: "Katedralis", Role: "hetzner", Caps: []string{"docker", "ollama"}, SSHUser: "dev"},
 			"secret-box":  {Exclude: true},
 			"rpi3b-recon": {Role: "pi"},
 		},
@@ -63,15 +63,33 @@ func TestSelect(t *testing.T) {
 	if r := Select(nodes, "rpi3b-recon"); len(r) != 1 {
 		t.Error("by name")
 	}
+	// select by nickname (case-insensitive)
+	if r := Select(nodes, "katedralis"); len(r) != 1 || r[0].Name != "dev-cx53" {
+		t.Errorf("by nickname: %v", r)
+	}
 	if Select(nodes, "nope") != nil {
 		t.Error("unknown selector should be empty")
 	}
 }
 
+func TestLabelFallsBackToName(t *testing.T) {
+	nodes := Merge(tsNodes(), cfg())
+	for _, n := range nodes {
+		if n.Name == "dev-cx53" && n.Label() != "Katedralis" {
+			t.Errorf("nickname should be the label, got %q", n.Label())
+		}
+		if n.Name == "rpi3b-recon" && n.Label() != "rpi3b-recon" {
+			t.Errorf("no nickname => label is the name, got %q", n.Label())
+		}
+	}
+}
+
 func TestRender(t *testing.T) {
 	out := Render(Merge(tsNodes(), cfg()))
-	if !strings.Contains(out, "NODE") || !strings.Contains(out, "dev-cx53") {
-		t.Errorf("render missing header/node: %q", out)
+	for _, want := range []string{"NICK", "HOST", "Katedralis", "dev-cx53"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("render missing %q: %q", want, out)
+		}
 	}
 	if !strings.Contains(out, "offline") {
 		t.Error("offline status not rendered")

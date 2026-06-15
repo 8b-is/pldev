@@ -9,10 +9,11 @@ import (
 
 // NodeConfig annotates a discovered node with what tailscale can't know.
 type NodeConfig struct {
-	Role    string   `toml:"role"`
-	Caps    []string `toml:"caps"`
-	SSHUser string   `toml:"ssh_user"`
-	Exclude bool     `toml:"exclude"`
+	Nickname string   `toml:"nickname"` // human/lore name; displayed + selectable
+	Role     string   `toml:"role"`
+	Caps     []string `toml:"caps"`
+	SSHUser  string   `toml:"ssh_user"`
+	Exclude  bool     `toml:"exclude"`
 }
 
 // FleetConfig is ~/.config/pldev/fleet.toml.

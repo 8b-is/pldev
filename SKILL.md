@@ -61,7 +61,7 @@ Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — 
 
 ## fleet (federation substrate)
 
-`pldev fleet` is a tailscale-discovered, config-annotated node registry. `~/.config/pldev/fleet.toml` annotates each node by short name: `[node.<name>]` with `role`, `caps`, `ssh_user`, `exclude` (+ a top-level `default_ssh_user`). Set real `ssh_user`s there or `health`/`ssh`/`run` can't reach nodes.
+`pldev fleet` is a tailscale-discovered, config-annotated node registry. `~/.config/pldev/fleet.toml` annotates each node by short name: `[node.<name>]` with `nickname`, `role`, `caps`, `ssh_user`, `exclude` (+ a top-level `default_ssh_user`). Set real `ssh_user`s there or `health`/`ssh`/`run` can't reach nodes. A `nickname` becomes the node's primary display identity (lore name) and is selectable (case-insensitive) anywhere a node name is — `pldev fleet ssh Katedralis`.
 
 - `pldev fleet list` — table (node/role/os/status/caps).
 - `pldev fleet health` — parallel reachability (offline + ssh BatchMode probe).
