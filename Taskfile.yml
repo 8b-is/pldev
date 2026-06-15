@@ -44,3 +44,15 @@ tasks:
       # ssh-keygen prompts for the key passphrase (or uses ssh-agent); no secret on the CLI.
       - ssh-keygen -Y sign -n pldev -f {{.KEY}} "{{.BIN}}"
       - 'echo "signed: {{.BIN}}.sig — verify with: pldev verify {{.BIN}}"'
+
+  pq-keygen:
+    desc: 'Generate the ML-DSA-65 release key (prints the pq_signers line; never prints the private key).'
+    cmds:
+      - go run . pq-keygen
+
+  pq-sign:
+    desc: 'PQ-sign a binary. Usage: task pq-sign BIN=dist/pldev-darwin-arm64 KEY=~/.config/pldev/keys/brett-shaw_mldsa.key'
+    requires: { vars: [BIN, KEY] }
+    cmds:
+      - go run . pq-sign -key {{.KEY}} "{{.BIN}}"
+      - 'echo "pq-signed: {{.BIN}}.sig.mldsa"'
