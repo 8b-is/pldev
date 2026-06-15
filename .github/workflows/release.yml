@@ -19,9 +19,11 @@ jobs:
       - name: Build + ssh-sign (no transparency log)
         env:
           SSH_SIGNING_KEY: ${{ secrets.SSH_SIGNING_KEY }}   # passphrase-less signing key whose pubkey is in internal/verify/allowed_signers
+          MLDSA_SIGNING_KEY: ${{ secrets.MLDSA_SIGNING_KEY }}
         run: |
           set -euo pipefail
           install -m 600 /dev/stdin /tmp/pldev-sign.key <<< "$SSH_SIGNING_KEY"
+          install -m 600 /dev/stdin /tmp/pldev-mldsa.key <<< "$MLDSA_SIGNING_KEY"
           PKG=github.com/peterlodri-sec/pldev/internal/buildinfo
           LD="-X $PKG.Version=$(git describe --tags --always --dirty) \
               -X $PKG.Commit=$(git rev-parse --short HEAD) \
@@ -32,7 +34,11 @@ jobs:
             GOOS=$os GOARCH=$arch go build -ldflags "$LD" -o "$out" .
             ssh-keygen -Y sign -n pldev -f /tmp/pldev-sign.key "$out"
           done
-          rm -f /tmp/pldev-sign.key
+          chmod +x dist/pldev-linux-amd64
+          for out in dist/pldev-darwin-arm64 dist/pldev-darwin-amd64 dist/pldev-linux-arm64 dist/pldev-linux-amd64; do
+            ./dist/pldev-linux-amd64 pq-sign -key /tmp/pldev-mldsa.key "$out"
+          done
+          rm -f /tmp/pldev-sign.key /tmp/pldev-mldsa.key
 
       - name: Publish release
         env:
@@ -40,4 +46,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "$GITHUB_REF_NAME" \
-            --notes "SSH-signed release (no public log). Verify a downloaded binary with an already-trusted pldev: \`pldev verify <binary>\` (binary #1: bootstrap once with raw \`ssh-keygen -Y verify\` + the allowed_signers anchor)."
+            --notes "Hybrid-signed release: ed25519 (ssh-keygen) + ML-DSA-65 (FIPS 204) — no public transparency log. Verify a downloaded binary with an already-trusted pldev: \`pldev verify <binary>\` (binary #1: bootstrap once with raw \`ssh-keygen -Y verify\` + the allowed_signers anchor)."

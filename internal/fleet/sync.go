@@ -37,21 +37,23 @@ func reachableMachines(machines []Machine) []Machine {
 	return out
 }
 
-// SyncSigners pushes the PUBLIC allowed_signers anchor to every reachable machine's
-// ~/.config/pldev/allowed_signers (so all nodes verify the same identities). It
-// also writes the anchor locally (promoting the embedded default to the runtime
-// file). Private keys are never touched. Gated: dry-run + confirm + BatchMode.
-func SyncSigners(ctx context.Context, rep *report.Reporter, machines []Machine, anchor []byte, localPath string, dryRun, yes bool) error {
+// SyncSigners pushes the PUBLIC allowed_signers anchor and the PQ trust anchor to
+// every reachable machine's ~/.config/pldev/allowed_signers and
+// ~/.config/pldev/pq_signers respectively (so all nodes verify the same
+// identities). It also writes both anchors locally (promoting the embedded
+// defaults to the runtime files). Private keys are never touched. Gated:
+// dry-run + confirm + BatchMode.
+func SyncSigners(ctx context.Context, rep *report.Reporter, machines []Machine, anchor []byte, localPath string, pqAnchor []byte, pqLocalPath string, dryRun, yes bool) error {
 	targets := reachableMachines(machines)
 	if dryRun {
 		rep.SetDryRun(true)
 		for _, m := range targets {
 			rep.Do("sync-signers", m.Label())
 		}
-		fmt.Printf("would sync allowed_signers (%d bytes) to %d reachable node(s) + local\n", len(anchor), len(targets))
+		fmt.Printf("would sync allowed_signers (%d bytes) + pq_signers (%d bytes) to %d reachable node(s) + local\n", len(anchor), len(pqAnchor), len(targets))
 		return nil
 	}
-	if !yes && !confirm(fmt.Sprintf("Sync allowed_signers to %d node(s) + local?", len(targets))) {
+	if !yes && !confirm(fmt.Sprintf("Sync allowed_signers + pq_signers to %d node(s) + local?", len(targets))) {
 		rep.Info("aborted")
 		return nil
 	}
@@ -65,13 +67,40 @@ func SyncSigners(ctx context.Context, rep *report.Reporter, machines []Machine, 
 		rep.OK("sync-signers", "local")
 	}
 
+	// local PQ anchor: promote embedded -> runtime file
+	if err := os.MkdirAll(filepath.Dir(pqLocalPath), 0o755); err != nil {
+		rep.Fail("sync-signers", "local-pq", err)
+	} else if err := os.WriteFile(pqLocalPath, pqAnchor, 0o644); err != nil {
+		rep.Fail("sync-signers", "local-pq", err)
+	} else {
+		rep.OK("sync-signers", "local-pq")
+	}
+
 	tmp, err := os.CreateTemp("", "pldev-signers-*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	tmp.Write(anchor)
-	tmp.Close()
+	if _, err := tmp.Write(anchor); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	tmpPQ, err := os.CreateTemp("", "pldev-pq-signers-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpPQ.Name())
+	if _, err := tmpPQ.Write(pqAnchor); err != nil {
+		tmpPQ.Close()
+		return err
+	}
+	if err := tmpPQ.Close(); err != nil {
+		return err
+	}
 
 	var failed int
 	for _, m := range targets {
@@ -86,6 +115,12 @@ func SyncSigners(ctx context.Context, rep *report.Reporter, machines []Machine, 
 		}
 		scpArgs := append(bm, tmp.Name(), dst+":.config/pldev/allowed_signers")
 		if _, err := sys.Run(ctx, "scp", scpArgs...); err != nil {
+			rep.Fail("sync-signers", m.Label(), err)
+			failed++
+			continue
+		}
+		scpPQArgs := append(bm, tmpPQ.Name(), dst+":.config/pldev/pq_signers")
+		if _, err := sys.Run(ctx, "scp", scpPQArgs...); err != nil {
 			rep.Fail("sync-signers", m.Label(), err)
 			failed++
 			continue

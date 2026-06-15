@@ -62,7 +62,8 @@ func TestSyncSignersDryRun(t *testing.T) {
 	var buf bytes.Buffer
 	rep := report.New(&buf, "fleet")
 	nodes := Merge(tsNodes(), cfg(), nil) // dev-cx53 online, rpi offline
-	err := SyncSigners(context.Background(), rep, GroupByMachine(nodes), []byte("anchor"), filepath.Join(t.TempDir(), "as"), true, false)
+	dir := t.TempDir()
+	err := SyncSigners(context.Background(), rep, GroupByMachine(nodes), []byte("anchor"), filepath.Join(dir, "as"), []byte("pqanchor"), filepath.Join(dir, "pq"), true, false)
 	if err != nil {
 		t.Fatalf("dry-run err: %v", err)
 	}

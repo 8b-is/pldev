@@ -3,6 +3,7 @@ package verify
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -103,6 +104,48 @@ func TestVerifyMissingSignature(t *testing.T) {
 	r, _ := rep()
 	if err := Verify(context.Background(), r, bin); err == nil || !strings.Contains(err.Error(), "missing signature") {
 		t.Errorf("missing sig should error, got %v", err)
+	}
+}
+
+func TestVerifyDualPolicy(t *testing.T) {
+	origRun, origLook := run, lookPath
+	defer func() { run, lookPath = origRun, origLook }()
+	lookPath = func(string) (string, error) { return "/usr/bin/ssh-keygen", nil }
+	run = func(ctx context.Context, stdin []byte, name string, args ...string) (string, error) {
+		return "brett-shaw@pldev\n", nil
+	}
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "pldev-test")
+	data := []byte("the bolygorozsa carries the order")
+	os.WriteFile(bin, data, 0o644)
+	os.WriteFile(bin+".sig", []byte("dummy-ed25519-sig"), 0o644)
+
+	pub, priv, _ := GenPQKeyPair()
+	sig, _ := SignPQ(priv, data)
+	os.WriteFile(bin+".sig.mldsa", []byte(base64.StdEncoding.EncodeToString(sig)), 0o644)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	os.MkdirAll(filepath.Join(home, ".config", "pldev"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "pldev", "pq_signers"),
+		[]byte("brett-shaw@pldev mldsa65 "+base64.StdEncoding.EncodeToString(pub)+"\n"), 0o644)
+
+	r, _ := rep()
+	if err := Verify(context.Background(), r, bin); err != nil {
+		t.Fatalf("dual-valid binary must verify: %v", err)
+	}
+
+	os.WriteFile(bin+".sig.mldsa", []byte(base64.StdEncoding.EncodeToString([]byte("garbage"))), 0o644)
+	r, _ = rep()
+	if err := Verify(context.Background(), r, bin); err == nil {
+		t.Fatal("present-but-invalid PQ signature must reject")
+	}
+
+	os.Remove(bin + ".sig.mldsa")
+	r, _ = rep()
+	if err := Verify(context.Background(), r, bin); err != nil {
+		t.Fatalf("ed25519-only binary must still verify: %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -113,6 +114,29 @@ func Verify(ctx context.Context, rep *report.Reporter, path string) error {
 		e := fmt.Errorf("unverified: %v", err)
 		rep.Fail("verify", path, e, report.KV{K: "out", V: strings.TrimSpace(vout)})
 		return e
+	}
+	// ed25519 verified. Enforce the PQ signature when one is present.
+	pqSigPath := path + ".sig.mldsa"
+	if _, err := os.Stat(pqSigPath); err == nil {
+		b64, err := os.ReadFile(pqSigPath)
+		if err != nil {
+			rep.Fail("verify", path, err)
+			return err
+		}
+		pqSig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(b64)))
+		if err != nil {
+			e := fmt.Errorf("malformed PQ signature: %v", err)
+			rep.Fail("verify", path, e)
+			return e
+		}
+		pqID, ok := verifyPQ(PQAnchorBytes(), blob, pqSig)
+		if !ok {
+			e := fmt.Errorf("unverified PQ signature (no trusted ML-DSA key)")
+			rep.Fail("verify", path, e)
+			return e
+		}
+		rep.OK("verify", path, report.KV{K: "signer", V: identity}, report.KV{K: "pq", V: pqID})
+		return nil
 	}
 	rep.OK("verify", path, report.KV{K: "signer", V: identity})
 	return nil
