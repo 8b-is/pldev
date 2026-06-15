@@ -8,8 +8,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/peterlodri-sec/pldev/internal/buildinfo"
 	"github.com/peterlodri-sec/pldev/internal/doctor/mem"
 	"github.com/peterlodri-sec/pldev/internal/doctor/probe"
+	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/setup"
 	"github.com/peterlodri-sec/pldev/internal/sysinfo"
 	"github.com/peterlodri-sec/pldev/internal/tui"
@@ -18,7 +20,7 @@ import (
 func main() {
 	args := os.Args[1:]
 	opts := mem.Options{}
-	var setupDryRun, setupList bool
+	var setupDryRun, setupList, showVersion bool
 	var positional []string
 	for _, a := range args {
 		switch a {
@@ -32,16 +34,29 @@ func main() {
 			setupDryRun = true
 		case "--list":
 			setupList = true
+		case "--version", "-v":
+			showVersion = true
 		default:
 			positional = append(positional, a)
 		}
 	}
 
+	// Build info: `pldev --version` / `pldev version` prints and exits.
+	if showVersion || (len(positional) >= 1 && positional[0] == "version") {
+		fmt.Println(buildinfo.String())
+		return
+	}
+
 	ctx := context.Background()
+
+	// Root action logger. One build-info line per invocation (stderr; keeps
+	// stdout data pipe-clean).
+	rep := report.New(os.Stderr, "pldev")
+	rep.Info(buildinfo.String())
 
 	// direct subcommand: pldev doctor mem
 	if len(positional) >= 2 && positional[0] == "doctor" && positional[1] == "mem" {
-		runMem(ctx, opts)
+		runMem(ctx, opts, rep.Sub("doctor.mem"))
 		return
 	}
 	// direct subcommand: pldev ps
@@ -57,7 +72,7 @@ func main() {
 			DryRun: setupDryRun,
 			Yes:    opts.YesSafe,
 			List:   setupList,
-		})
+		}, rep.Sub("setup"))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
@@ -65,10 +80,10 @@ func main() {
 		return
 	}
 	if len(positional) == 0 {
-		rootMenu(ctx, opts)
+		rootMenu(ctx, opts, rep)
 		return
 	}
-	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps | setup] [--report] [--yes] [--no-color] [--dry-run] [--list]")
+	fmt.Fprintln(os.Stderr, "usage: pldev [doctor mem | ps | setup | version] [--report] [--yes] [--no-color] [--dry-run] [--list] [--version]")
 	os.Exit(2)
 }
 
@@ -78,14 +93,14 @@ func runPS(ctx context.Context) {
 	fmt.Print(sysinfo.RenderPanel(info, color))
 }
 
-func runMem(ctx context.Context, opts mem.Options) {
-	if err := mem.Run(ctx, probe.New(), opts); err != nil {
+func runMem(ctx context.Context, opts mem.Options, rep *report.Reporter) {
+	if err := mem.Run(ctx, probe.New(), opts, rep); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func rootMenu(ctx context.Context, opts mem.Options) {
+func rootMenu(ctx context.Context, opts mem.Options, rep *report.Reporter) {
 	m := tui.NewSelect("pldev", []string{"doctor mem", "system info (ps)", "setup", "Quit"})
 	res, err := tea.NewProgram(m).Run()
 	if err != nil {
@@ -95,11 +110,11 @@ func rootMenu(ctx context.Context, opts mem.Options) {
 	sm := res.(tui.SelectModel)
 	switch sm.Chosen {
 	case 0:
-		runMem(ctx, opts)
+		runMem(ctx, opts, rep.Sub("doctor.mem"))
 	case 1:
 		runPS(ctx)
 	case 2:
-		if err := setup.Run(ctx, setup.Options{}); err != nil {
+		if err := setup.Run(ctx, setup.Options{}, rep.Sub("setup")); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}

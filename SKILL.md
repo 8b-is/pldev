@@ -48,3 +48,9 @@ exact command for the human to run.
 - `--dry-run` plan only · `--yes` skip confirm · `--list` show registry · `--no-color`.
 
 Idempotent (skips installed). System managers (apt/dnf/pacman) run via sudo — sudo prompts you directly; pldev never sees the password. No uninstall in v1.
+
+## Action log & version
+
+- `pldev --version` (or `pldev version`) prints embedded build info: `pldev <ver> (<sha>, <commit-date>, go1.x)`.
+- Every command logs one line per action to **stderr** (data stays on stdout). logfmt fields: `ts lvl scope action target status [k=v…] [msg]`; `status` ∈ ok/fail/skip/have/do/dry. In `--dry-run`, pending actions log as `status=dry`.
+- Env: `PLDEV_LOG=plain|pretty|json` forces render mode; `NO_COLOR=1` forces plain. Parse the log with standard logfmt tooling (`grep 'status=fail'`, etc.).

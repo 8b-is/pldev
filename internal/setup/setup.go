@@ -3,11 +3,14 @@ package setup
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/peterlodri-sec/pldev/internal/report"
 	"github.com/peterlodri-sec/pldev/internal/tui"
 )
 
@@ -26,8 +29,16 @@ func loadRegistry() (Registry, error) {
 	return Merge(BuiltinRegistry(), user), nil
 }
 
-// Run executes the setup flow.
-func Run(ctx context.Context, opts Options) error {
+// Run executes the setup flow. rep is the action logger; pass nil to default
+// to a stderr reporter scoped "setup".
+func Run(ctx context.Context, opts Options, rep *report.Reporter) error {
+	if rep == nil {
+		rep = report.New(os.Stderr, "setup")
+	}
+	if opts.DryRun {
+		rep.SetDryRun(true)
+	}
+
 	reg, err := loadRegistry()
 	if err != nil {
 		return err
@@ -59,61 +70,69 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	printPlan(plan)
+	printPlan(rep, plan)
 
 	if opts.DryRun {
 		return nil
 	}
 	if len(plan.ToInstall) == 0 {
-		fmt.Println("nothing to install.")
+		rep.Info("nothing to install")
 		return nil
 	}
 	if !opts.Yes && !tui.Confirm(fmt.Sprintf("Install %d package(s)?", len(plan.ToInstall))) {
-		fmt.Println("aborted.")
+		rep.Info("aborted")
 		return nil
 	}
-	return apply(ctx, plan)
+	return apply(ctx, plan, rep)
 }
 
-func apply(ctx context.Context, plan InstallPlan) error {
+func apply(ctx context.Context, plan InstallPlan, rep *report.Reporter) error {
 	var installed, failed int
 	var fails []string
 	for _, it := range plan.ToInstall {
-		fmt.Printf("==> %s (%s)\n", it.Tool.Name, strings.Join(BuildCmd(it.Spec), " "))
+		rep.Do("install", it.Tool.Name)
 		if _, err := Install(ctx, it.Spec); err != nil {
 			failed++
 			fails = append(fails, it.Tool.Name+": "+err.Error())
-			fmt.Printf("    FAILED: %v\n", err)
+			rep.Fail("install", it.Tool.Name, err)
 			continue
 		}
 		installed++
-		fmt.Println("    ok")
+		rep.OK("install", it.Tool.Name, report.KV{K: "via", V: string(it.Spec.Backend)})
 	}
-	fmt.Printf("\nSummary: %d installed, %d skipped, %d unsupported, %d failed\n",
-		installed, len(plan.Installed), len(plan.Unsupported), failed)
+	rep.Info("setup-summary",
+		report.KV{K: "installed", V: itoa(installed)},
+		report.KV{K: "skipped", V: itoa(len(plan.Installed))},
+		report.KV{K: "unsupported", V: itoa(len(plan.Unsupported))},
+		report.KV{K: "failed", V: itoa(failed)},
+	)
 	if failed > 0 {
 		return fmt.Errorf("failed: %s", strings.Join(fails, "; "))
 	}
 	return nil
 }
 
-func printPlan(p InstallPlan) {
-	fmt.Println("== setup plan ==")
-	for _, it := range p.ToInstall {
-		sudo := ""
-		if it.NeedsSudo {
-			sudo = " (sudo)"
-		}
-		fmt.Printf("  install  %-12s via %s%s\n", it.Tool.Name, it.Spec.Backend, sudo)
-	}
+// printPlan previews the resolved plan via the reporter. Already-installed
+// tools log as have; unsupported as skip; in dry-run, pending installs log as
+// dry (the preview). In a live run, pending installs are logged by apply.
+func printPlan(rep *report.Reporter, p InstallPlan) {
 	for _, t := range p.Installed {
-		fmt.Printf("  have     %-12s\n", t.Name)
+		rep.Have("install", t.Name)
 	}
 	for _, t := range p.Unsupported {
-		fmt.Printf("  UNSUPPORTED %-9s (no backend on this OS)\n", t.Name)
+		rep.Skip("install", t.Name, "no backend on this OS")
 	}
-	fmt.Println()
+	// In dry-run, preview each pending install as status=dry. In a live run,
+	// apply logs do/ok/fail per item, so don't pre-announce here (avoids a
+	// duplicate status=do line per tool).
+	if rep.DryRun() {
+		for _, it := range p.ToInstall {
+			rep.Do("install", it.Tool.Name)
+		}
+	}
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func printList(r Registry) {
 	byCat := map[string][]string{}
