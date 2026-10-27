@@ -21,6 +21,18 @@ tasks:
     env: { HOME: '{{.HOME}}' }
   test:
     cmds: ['go test ./...']
+  up-build:
+    desc: Build pure-Zig `up` (pldev x wupz) binary
+    cmds: ['zig build-exe -O ReleaseSafe -lc up/src/main.zig -femit-bin=up/up']
+  up-install:
+    desc: Build and install `up` to ~/.local/bin/up
+    cmds:
+      - zig build-exe -O ReleaseSafe -lc up/src/main.zig -femit-bin=up/up
+      - mkdir -p "{{.HOME}}/.local/bin"
+      - cp up/up "{{.HOME}}/.local/bin/up"
+  up-test:
+    desc: Run Zig unit & differential tests for `up`
+    cmds: ['zig test -lc up/src/main.zig']
   lint:
     cmds: ['go vet ./...']
   version:
