@@ -1,0 +1,40 @@
+name: CI — Go pldev & Pure-Zig `up` (pldev x wupz)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  go-pldev:
+    name: Go pldev Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Vet & Test Go Packages
+        run: |
+          go vet ./...
+          go test ./...
+
+  zig-up:
+    name: Pure-Zig `up` (SIMD & CLI Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: master
+      - name: Test & Build `up`
+        run: |
+          zig test -lc up/src/main.zig
+          zig build-exe -O ReleaseSafe -lc up/src/main.zig -femit-bin=up/up
+          ./up/up --version
+          ./up/up ps
+          ./up/up fleet
+          ./up/up setup @8b --dry-run
+          ./up/up verify ./up/up

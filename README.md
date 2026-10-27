@@ -1,6 +1,6 @@
 # pldev & `up` (Pure-Zig 0.16 Rebuild)
 
-Single-entrypoint personal machine helper (`pldev` in Go + **`up`** in pure Zig `0.16.0` paired with [`8b-is/wupz`](https://github.com/8b-is/wupz) SIMD kernels). Modules: `doctor mem`, `ps`, `setup`, `fold`.
+Single-entrypoint personal machine helper (`pldev` in Go + **`up`** in pure Zig `0.16.0` paired with [`8b-is/wupz`](https://github.com/8b-is/wupz) SIMD kernels, mirrored at [`8b-is/up`](https://github.com/8b-is/up) and [`8b-is/pldev`](https://github.com/8b-is/pldev)). Modules: `doctor mem`, `ps`, `setup`, `fleet`, `verify`, `fold`.
 
 ## Build & Install (`up` in Zig + `pldev` in Go)
     # Pure-Zig `up` (zero-alloc Darwin sysctl + wupz @Vector SIMD kernels)
@@ -9,6 +9,8 @@ Single-entrypoint personal machine helper (`pldev` in Go + **`up`** in pure Zig 
     up ps
     up doctor mem
     up setup @8b --dry-run
+    up fleet
+    up verify ~/.local/bin/up
     up fold "8b-is sovereign core"
 
     # Go `pldev`

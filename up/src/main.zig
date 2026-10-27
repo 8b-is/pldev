@@ -398,6 +398,67 @@ pub fn runSetup(arg: []const u8, dry_run: bool, list_only: bool) u8 {
     return 0;
 }
 
+pub const FleetNode = struct {
+    name: []const u8,
+    addr: []const u8,
+    arch: []const u8,
+    role: []const u8,
+};
+
+pub const FLEET = [_]FleetNode{
+    .{ .name = "mbp", .addr = "local", .arch = "aarch64-darwin", .role = "Sovereign workstation (M-series, up/Ghostty)" },
+    .{ .name = "dev-cx53", .addr = "dev-cx53.tail2870dc.ts.net", .arch = "x86_64-linux", .role = "NixOS build/deploy host & honcho" },
+    .{ .name = "public-services-host", .addr = "167.233.105.32", .arch = "x86_64-linux", .role = "Forgejo, Mastodon, Vaultwarden" },
+    .{ .name = "hetzner", .addr = "hetzner.tail2870dc.ts.net", .arch = "aarch64-linux", .role = "CAX31 ARM64 runners, pgvector, utopia" },
+    .{ .name = "a6000.8b.is", .addr = "49.13.101.247", .arch = "x86_64-linux", .role = "alexiai 19/19 + st GPU compute node" },
+    .{ .name = "ns3", .addr = "5.78.220.57", .arch = "x86_64-linux", .role = "8b.is DNS & self-hosted GH Actions runner" },
+    .{ .name = "ns4", .addr = "5.223.89.144", .arch = "x86_64-linux", .role = "8b.is DNS & self-hosted GH Actions runner" },
+};
+
+pub fn runFleet() void {
+    printBoxHr();
+    printBoxLine("up fleet (8b.is x pldev sovereign fleet)");
+    printBoxHr();
+    for (FLEET) |n| {
+        var buf: [256]u8 = undefined;
+        const line = std.fmt.bufPrint(&buf, "{s:<20} {s:<15} {s}", .{ n.name, n.arch, n.addr }) catch continue;
+        printBoxLine(line);
+    }
+    printBoxHr();
+}
+
+pub fn runVerifyFile(path_z: [*:0]const u8) u8 {
+    const fd = std.c.open(path_z, .{ .ACCMODE = .RDONLY }, @as(std.c.mode_t, 0));
+    if (fd < 0) {
+        writeErr("up verify: cannot open file\n");
+        return 1;
+    }
+    defer _ = std.c.close(fd);
+
+    var buf: [4096]u8 = undefined;
+    var total_bytes: u64 = 0;
+    var fold_acc: u64 = 0;
+    var pop_acc: u64 = 0;
+
+    while (true) {
+        const n = std.c.read(fd, &buf, buf.len);
+        if (n <= 0) break;
+        const chunk = buf[0..@intCast(n)];
+        total_bytes += chunk.len;
+        fold_acc ^= xorFold(chunk);
+        pop_acc += popcount(chunk);
+    }
+
+    var out_buf: [512]u8 = undefined;
+    const s = std.fmt.bufPrint(
+        &out_buf,
+        "status=ok file=\"{s}\" bytes={d} xor_fold=0x{x:0>16} popcount={d}\n",
+        .{ std.mem.span(path_z), total_bytes, fold_acc, pop_acc },
+    ) catch return 1;
+    writeOut(s);
+    return 0;
+}
+
 const USAGE =
     \\usage: up <command> [arguments]
     \\
@@ -405,6 +466,8 @@ const USAGE =
     \\  ps                         neofetch-style system & SIMD overview panel
     \\  doctor mem [--report]      memory & orphaned-MCP diagnostic report
     \\  setup [@profile | a+b]     resolve & plan tool installation (@minimal, @dev, @server, @work, @8b)
+    \\  fleet                      print 8b.is x pldev sovereign fleet inventory
+    \\  verify <file>              compute streaming SIMD xorFold & popcount binary fingerprint
     \\  fold <text>                compute SIMD @Vector(4,u64) xorFold & popcount seal
     \\  version, --version         print version and target info
     \\
@@ -433,6 +496,17 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     if (std.mem.eql(u8, cmd, "doctor")) {
         runDoctorMem();
         return 0;
+    }
+    if (std.mem.eql(u8, cmd, "fleet")) {
+        runFleet();
+        return 0;
+    }
+    if (std.mem.eql(u8, cmd, "verify")) {
+        if (argv.len < 3) {
+            writeErr("usage: up verify <file>\n");
+            return 2;
+        }
+        return runVerifyFile(argv[2]);
     }
     if (std.mem.eql(u8, cmd, "setup")) {
         var dry = false;
