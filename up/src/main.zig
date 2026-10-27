@@ -89,6 +89,29 @@ pub fn popcount(bytes: []const u8) u64 {
     return count;
 }
 
+pub const GATE_0X62: u8 = 0x62;
+pub const FRAME_ABI_V1: u8 = 0x01;
+
+pub fn sealFrame32B(raw: []const u8, packed_bytes: []const u8, gate: u8) [32]u8 {
+    var frame: [32]u8 = @splat(0);
+    std.mem.writeInt(u64, frame[0..8], xorFold(raw), .little);
+    std.mem.writeInt(u64, frame[8..16], xorFold(packed_bytes), .little);
+    std.mem.writeInt(u32, frame[16..20], @truncate(raw.len), .little);
+    std.mem.writeInt(u32, frame[20..24], @truncate(packed_bytes.len), .little);
+    frame[24] = gate;
+    frame[25] = FRAME_ABI_V1;
+    var prefix_le: [8]u8 = undefined;
+    std.mem.writeInt(u64, &prefix_le, xorFold(frame[0..26]), .little);
+    @memcpy(frame[26..32], prefix_le[0..6]);
+    return frame;
+}
+
+pub fn verifyFrame32B(frame: *const [32]u8, raw: []const u8, packed_bytes: []const u8, gate: u8) bool {
+    if (frame[24] != gate or frame[25] != FRAME_ABI_V1) return false;
+    const expected = sealFrame32B(raw, packed_bytes, gate);
+    return byteDiff(frame[0..], expected[0..]) == 0;
+}
+
 // ── 2. Built-in Tool & Profile Registry (`pldev setup` + `@8b`) ─────────────
 
 pub const Backend = enum {
@@ -528,8 +551,10 @@ pub fn main(init: std.process.Init.Minimal) u8 {
         const input: []const u8 = if (argv.len >= 3) std.mem.span(argv[2]) else "up-sovereign-core";
         const xf = xorFold(input);
         const pc = popcount(input);
+        const frame = sealFrame32B(input, input, GATE_0X62);
+        const tail48 = std.mem.readInt(u48, frame[26..32], .little);
         var buf: [256]u8 = undefined;
-        const s = std.fmt.bufPrint(&buf, "input_len={d} xor_fold=0x{x:0>16} popcount={d}\n", .{ input.len, xf, pc }) catch return 1;
+        const s = std.fmt.bufPrint(&buf, "input_len={d} gate=0x{x:0>2} xor_fold=0x{x:0>16} seal48=0x{x:0>12} popcount={d}\n", .{ input.len, frame[24], xf, tail48, pc }) catch return 1;
         writeOut(s);
         return 0;
     }
@@ -544,6 +569,12 @@ test "up SIMD xorFold and byteDiff match scalar reference" {
     const sample = "peterlodri-sec/pldev x 8b-is/wupz sovereign zig 0.16 rebuild!";
     try std.testing.expectEqual(xorFoldScalar(sample), xorFold(sample));
     try std.testing.expectEqual(@as(u64, 0), byteDiff(sample, sample));
+
+    var frame = sealFrame32B(sample, sample, GATE_0X62);
+    try std.testing.expectEqual(GATE_0X62, frame[24]);
+    try std.testing.expect(verifyFrame32B(&frame, sample, sample, GATE_0X62));
+    frame[31] ^= 0x01;
+    try std.testing.expect(!verifyFrame32B(&frame, sample, sample, GATE_0X62));
 }
 
 test "up tool and profile registry lookup" {
