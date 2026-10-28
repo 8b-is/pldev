@@ -112,6 +112,87 @@ pub fn verifyFrame32B(frame: *const [32]u8, raw: []const u8, packed_bytes: []con
     return byteDiff(frame[0..], expected[0..]) == 0;
 }
 
+pub const WORD15_MASK: u16 = 0x7FFF;
+pub const NEG_ZERO_15: u16 = 0x7FFF;
+pub const POS_ZERO_15: u16 = 0x0000;
+
+pub inline fn nand15(a: u16, b: u16) u16 {
+    return (~((a & WORD15_MASK) & (b & WORD15_MASK))) & WORD15_MASK;
+}
+
+pub inline fn not15(a: u16) u16 {
+    return nand15(a, a);
+}
+
+pub fn fromSigned15(v: i16) u16 {
+    if (v >= 0) return @as(u16, @intCast(v)) & WORD15_MASK;
+    return not15(@intCast(-v));
+}
+
+pub fn toSigned15(w: u16) i16 {
+    const masked = w & WORD15_MASK;
+    if (masked == NEG_ZERO_15) return 0;
+    if ((masked & 0x4000) == 0) return @intCast(masked);
+    return -@as(i16, @intCast(not15(masked)));
+}
+
+pub fn packWord15ToSpqt3B(w15: u16) [3]u8 {
+    const masked = w15 & WORD15_MASK;
+    const is_neg = (masked & 0x4000) != 0 and masked != POS_ZERO_15;
+    const mag: u16 = if (masked == NEG_ZERO_15) 0 else if (is_neg) not15(masked) else masked;
+
+    var out: [3]u8 = .{ 0, 0, 0 };
+    var byte_idx: usize = 0;
+    while (byte_idx < 3) : (byte_idx += 1) {
+        var acc: u8 = 0;
+        var pow3: u8 = 1;
+        var k: usize = 0;
+        while (k < 5) : (k += 1) {
+            const bit_pos: u4 = @intCast(byte_idx * 5 + k);
+            const bit_set = ((mag >> bit_pos) & 1) == 1;
+            const digit: u8 = if (bit_pos == 14)
+                (if (masked == NEG_ZERO_15) 0 else if (is_neg) 0 else 1)
+            else if (!bit_set)
+                1
+            else if (is_neg)
+                0
+            else
+                2;
+            acc += digit * pow3;
+            if (k < 4) pow3 *= 3;
+        }
+        out[byte_idx] = acc;
+    }
+    return out;
+}
+
+pub fn unpackSpqt3BToWord15(cell: [3]u8) u16 {
+    var digits: [15]u8 = undefined;
+    var byte_idx: usize = 0;
+    while (byte_idx < 3) : (byte_idx += 1) {
+        var v = cell[byte_idx];
+        var k: usize = 0;
+        while (k < 5) : (k += 1) {
+            digits[byte_idx * 5 + k] = v % 3;
+            v /= 3;
+        }
+    }
+    var mag: u16 = 0;
+    var is_neg = false;
+    var b: u4 = 0;
+    while (b < 14) : (b += 1) {
+        const d = digits[b];
+        if (d == 0) {
+            is_neg = true;
+            mag |= (@as(u16, 1) << b);
+        } else if (d == 2) {
+            mag |= (@as(u16, 1) << b);
+        }
+    }
+    if (digits[14] == 0 and mag == 0) return NEG_ZERO_15;
+    return if (is_neg) not15(mag) else (mag & WORD15_MASK);
+}
+
 // ── 2. Built-in Tool & Profile Registry (`pldev setup` + `@8b`) ─────────────
 
 pub const Backend = enum {
@@ -575,6 +656,12 @@ test "up SIMD xorFold and byteDiff match scalar reference" {
     try std.testing.expect(verifyFrame32B(&frame, sample, sample, GATE_0X62));
     frame[31] ^= 0x01;
     try std.testing.expect(!verifyFrame32B(&frame, sample, sample, GATE_0X62));
+
+    for ([_]i16{ 0, 1, -1, 67, -67, 3156, -3156 }) |v| {
+        const w15 = fromSigned15(v);
+        const cell = packWord15ToSpqt3B(w15);
+        try std.testing.expectEqual(w15, unpackSpqt3BToWord15(cell));
+    }
 }
 
 test "up tool and profile registry lookup" {
